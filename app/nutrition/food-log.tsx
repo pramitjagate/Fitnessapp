@@ -24,7 +24,9 @@ export default function FoodLog({
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [custom, setCustom] = useState({ label: "", kcal: "", protein: "" });
-  const [weight, setWeight] = useState(latestWeight ? String(latestWeight) : "");
+  const [weight, setWeight] = useState(
+    latestWeight ? String(latestWeight) : "",
+  );
   const [weightSaved, setWeightSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -41,7 +43,8 @@ export default function FoodLog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Could not add that.");
+      if (!res.ok)
+        throw new Error((await res.json()).error ?? "Could not add that.");
       router.refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -80,7 +83,8 @@ export default function FoodLog({
     router.refresh();
   }
 
-  const bar = (value: number, target: number) => Math.min(100, Math.round((value / target) * 100));
+  const bar = (value: number, target: number) =>
+    Math.min(100, Math.round((value / target) * 100));
   // Over-target is worth seeing, not hiding — the overshoot rides past the bar.
   const over = (value: number, target: number) => value > target;
 
@@ -167,8 +171,8 @@ export default function FoodLog({
           <div>
             <h3>Add something</h3>
             <p className="tiny">
-              Straight from the library, or type it. Two numbers is enough — calories and
-              protein are what the loop reads.
+              Straight from the library, or type it. Two numbers is enough —
+              calories and protein are what the loop reads.
             </p>
           </div>
         </div>
@@ -219,6 +223,7 @@ export default function FoodLog({
           <input
             type="text"
             placeholder="Anything else"
+            suppressHydrationWarning
             value={custom.label}
             onChange={(e) => setCustom({ ...custom, label: e.target.value })}
           />
@@ -226,6 +231,7 @@ export default function FoodLog({
             type="number"
             placeholder="kcal"
             min={0}
+            suppressHydrationWarning
             value={custom.kcal}
             onChange={(e) => setCustom({ ...custom, kcal: e.target.value })}
           />
@@ -233,6 +239,7 @@ export default function FoodLog({
             type="number"
             placeholder="protein"
             min={0}
+            suppressHydrationWarning
             value={custom.protein}
             onChange={(e) => setCustom({ ...custom, protein: e.target.value })}
           />
@@ -247,8 +254,9 @@ export default function FoodLog({
           <div>
             <h3>This morning&apos;s weight</h3>
             <p className="tiny">
-              One reading a day, first thing. Any single number is mostly water — the loop
-              only ever reads the fourteen-day trend, never today against yesterday.
+              One reading a day, first thing. Any single number is mostly water
+              — the loop only ever reads the fourteen-day trend, never today
+              against yesterday.
             </p>
           </div>
         </div>
@@ -259,6 +267,7 @@ export default function FoodLog({
               step="0.1"
               min={20}
               max={300}
+              suppressHydrationWarning
               value={weight}
               onChange={(e) => {
                 setWeight(e.target.value);
