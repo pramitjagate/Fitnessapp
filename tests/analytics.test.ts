@@ -20,7 +20,14 @@ function loggedSession(over: Partial<LoggedSession> = {}): LoggedSession {
   };
 }
 
-function lift(over: Partial<LoggedSession["lifts"][number]> = {}) {
+type Lift = LoggedSession["lifts"][number];
+
+/*
+ * The return type annotation is load-bearing. Without it "row" widens to
+ * string, the tests still pass — vitest transpiles rather than typechecks —
+ * and `tsc --noEmit` fails in CI instead. Green tests are not a typecheck.
+ */
+function lift(over: Partial<Lift> = {}): Lift {
   return {
     lift: "row",
     setsCompleted: 3,
