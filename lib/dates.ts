@@ -1,10 +1,11 @@
 /* ---------------------------------------------------------------------------
  * Dates are handled in the LIFTER'S timezone, not the server's.
  *
- * `toISOString()` formats in UTC. In Dallas that's the same day for most of it
- * — but from 7pm local, UTC has already rolled over, so the app would show
- * tomorrow's session while you're still in the gym doing today's. That bug
- * only ever appears in the evening, which is exactly when this app is used.
+ * `toISOString()` formats in UTC. On a laptop in Dallas that's the same day for
+ * most of it — but from 7pm local, UTC has already rolled over, so the app
+ * would show tomorrow's session while you're still in the gym doing today's.
+ * That bug only ever appears in the evening, which is exactly when this app is
+ * used.
  *
  * Vercel reserves the TZ variable, so the zone can't be set at the process
  * level. Formatting explicitly is better anyway: it behaves the same locally
@@ -60,8 +61,18 @@ export function dayName(isoDate: string): string {
 }
 
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 export function prettyDate(isoDate: string): string {

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck before build: it fails in about a second and the error is
+      # readable, where the same mistake inside a build is buried in bundler
+      # output.
+      - run: npx tsc --noEmit
+
+      - run: npm test
+
+      # No DATABASE_URL here on purpose — the build must succeed without one,
+      # which is also what proves the JSON store still works as the fallback.
+      - run: npm run build
