@@ -1,5 +1,29 @@
+/* ---------------------------------------------------------------------------
+ * Dates are handled in the LIFTER'S timezone, not the server's.
+ *
+ * `toISOString()` formats in UTC. In Dallas that's the same day for most of it
+ * — but from 7pm local, UTC has already rolled over, so the app would show
+ * tomorrow's session while you're still in the gym doing today's. That bug
+ * only ever appears in the evening, which is exactly when this app is used.
+ *
+ * Vercel reserves the TZ variable, so the zone can't be set at the process
+ * level. Formatting explicitly is better anyway: it behaves the same locally
+ * and deployed, and doesn't depend on how the host is configured.
+ *
+ * "en-CA" is the trick — its short date format is already YYYY-MM-DD.
+ * ------------------------------------------------------------------------- */
+export const APP_TIMEZONE =
+  process.env.APP_TIMEZONE?.trim() || "America/Chicago";
+
+const ISO_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: APP_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 export function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return ISO_FORMATTER.format(d);
 }
 
 export function addDays(d: Date, n: number): Date {

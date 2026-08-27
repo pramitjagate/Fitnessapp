@@ -13,6 +13,17 @@ export const metadata: Metadata = {
     "An adaptive strength coach that changes your plan on patterns, not single sessions.",
 };
 
+/**
+ * Applies the stored theme before first paint. Without it, anyone who picked
+ * dark gets a flash of light on every navigation — the classic hand-rolled
+ * toggle bug.
+ *
+ * It lives as the first child of <body>, not inside a <head> element: the App
+ * Router owns <head> itself, and nesting one is what produced the "<html>
+ * cannot contain a nested <script>" warning.
+ */
+const THEME_SCRIPT = `try{if(localStorage.getItem('sw-theme')==='dark'){document.documentElement.dataset.theme='dark'}}catch(e){}`;
+
 export default async function RootLayout({
   children,
 }: {
@@ -25,6 +36,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <div className="shell">
           <div className="topbar">
             <Link href={user ? "/" : "/login"} className="brand">
