@@ -4,6 +4,7 @@ import { rpeTrend } from "@/lib/analytics";
 import { prettyDate } from "@/lib/dates";
 import { requireScope } from "@/lib/session";
 import { store } from "@/lib/store";
+import { formatWeight, kgToDisplay } from "@/lib/units";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,15 @@ export default async function History() {
                 <div className="lift" key={l.lift}>
                   <span className="lift-name">{liftLabel(l.lift)}</span>
                   <span className="lift-rx">
-                    {l.weightKg}kg · {l.repsCompleted}/{l.repsPrescribed} ·{" "}
+                    {/* A ramp is shown as the ramp. Collapsing 50/55/60 to its
+                        top set on the one screen meant for looking back would
+                        hide the work that produced it. */}
+                    {l.setWeightsKg?.length
+                      ? `${l.setWeightsKg
+                          .map((kg) => kgToDisplay(kg, db.profile.units))
+                          .join("/")}${db.profile.units}`
+                      : formatWeight(l.weightKg, db.profile.units)}{" "}
+                    · {l.repsCompleted}/{l.repsPrescribed} ·{" "}
                     {l.rpe === null ? "no RPE" : `RPE ${l.rpe}`}
                     {!l.hitAllReps && " · missed reps"}
                   </span>

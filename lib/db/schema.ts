@@ -1,5 +1,13 @@
 import { boolean, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import type { Accessory, AdaptationDecision, LoggedLift, NutritionDecision, PrescribedLift, WeeklyPlan } from "../types";
+import type {
+  Accessory,
+  AdaptationDecision,
+  LoggedLift,
+  NoteExtraction,
+  NutritionDecision,
+  PrescribedLift,
+  WeeklyPlan,
+} from "../types";
 
 /* ---------------------------------------------------------------------------
  * Where the line between column and jsonb falls, and why.
@@ -22,11 +30,37 @@ export const users = pgTable(
     email: text("email").notNull(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
-    /** Set once the eight-week demo history has been written for this user. */
+    /**
+     * scrypt$salt$hash. Nullable because rows written before real sign-up
+     * existed have no password — those accounts can be claimed by signing up
+     * with the same address, which is why user ids are derived from the email
+     * rather than generated.
+     */
+    passwordHash: text("password_hash"),
+    /** Set once demo history has been written for this user. Off by default now. */
     seededAt: timestamp("seeded_at"),
   },
   (t) => [uniqueIndex("users_email_idx").on(t.email)]
 );
+
+/**
+ * Live sessions, one row per sign-in.
+ *
+ * The row's key is the SHA-256 of the token, never the token — a dump of this
+ * table is useless to whoever reads it, because the value the browser sends
+ * cannot be recovered from its hash.
+ *
+ * A server-side table rather than a self-contained signed cookie (a JWT) is
+ * the deliberate choice: it means sign-out actually ends the session, and a
+ * compromised account can be cut off now rather than when the token expires.
+ * The cost is a database read per request, which for one user is nothing.
+ */
+export const authSessions = pgTable("auth_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
 
 export const profiles = pgTable("profiles", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
@@ -92,6 +126,7 @@ export const sessions = pgTable(
     status: text("status").notNull(),
     accessoriesCompleted: boolean("accessories_completed").notNull(),
     feedback: text("feedback").notNull(),
+    extraction: jsonb("extraction").$type<NoteExtraction | null>(),
     sleep: text("sleep"),
     sleepSource: text("sleep_source"),
     lifts: jsonb("lifts").$type<LoggedLift[]>().notNull(),

@@ -5,31 +5,48 @@ import { useState } from "react";
 
 type Mode = "signin" | "signup";
 
-export default function LoginForm({ signedOut }: { signedOut: boolean }) {
+export default function LoginForm({
+  signedOut,
+  accountDeleted,
+}: {
+  signedOut: boolean;
+  accountDeleted: boolean;
+}) {
   const [mode, setMode] = useState<Mode>("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<null | "form" | "demo">(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  async function send(body: unknown, which: "form" | "demo") {
-    setBusy(which);
+  async function send() {
+    setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          mode,
+          email,
+          password,
+          name: mode === "signup" ? name : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not sign in.");
-      router.replace("/");
+      /*
+       * A brand new account has no body stats and no programme, so it goes
+       * through both questionnaires — profile first, since the nutrition
+       * estimate needs it and the training split doesn't — rather than a
+       * dashboard with nothing on it. Signing in goes home.
+       */
+      router.replace(mode === "signup" ? "/profile/setup" : "/");
       router.refresh();
     } catch (e) {
       setError((e as Error).message);
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -42,6 +59,7 @@ export default function LoginForm({ signedOut }: { signedOut: boolean }) {
       </p>
 
       {signedOut && <div className="banner">Signed out. Your training data is untouched.</div>}
+      {accountDeleted && <div className="banner">Account deleted. Nothing was kept.</div>}
 
       <div className="card auth-card">
         <div className="seg auth-seg">
@@ -70,7 +88,7 @@ export default function LoginForm({ signedOut }: { signedOut: boolean }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            send({ email, password, name: mode === "signup" ? name : undefined }, "form");
+            send();
           }}
         >
           {mode === "signup" && (
@@ -113,38 +131,25 @@ export default function LoginForm({ signedOut }: { signedOut: boolean }) {
 
           {error && <div className="banner banner--warn">{error}</div>}
 
-          <button type="submit" disabled={busy !== null} className="wide">
-            {busy === "form"
-              ? "One moment…"
-              : mode === "signin"
-                ? "Sign in"
-                : "Create account"}
+          <button type="submit" disabled={busy} className="wide">
+            {busy ? "One moment…" : mode === "signin" ? "Sign in" : "Create account"}
           </button>
         </form>
 
-        <div className="or">
-          <span>or</span>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn--ghost wide"
-          disabled={busy !== null}
-          onClick={() => send({ demo: true }, "demo")}
-        >
-          {busy === "demo" ? "Opening…" : "Look around with the demo account"}
-        </button>
-        <p className="tiny">
-          Eight weeks of seeded training history, no sign-up. This is the way in worth using.
-        </p>
+        {mode === "signup" && (
+          <p className="tiny">
+            Your account starts empty. The next screen asks how many days you train, what
+            split you follow and which days are rest — nothing is planned for you before you
+            have said what you actually do.
+          </p>
+        )}
       </div>
 
       <div className="auth-note">
-        <strong>This screen is a shell, not authentication.</strong> No password is checked
-        and nothing is stored beyond a cookie holding the name you typed. It exists so the
-        account surfaces — the avatar menu, profile, settings, sign out — can be designed and
-        argued about before a provider is chosen. Wiring real auth means replacing three
-        functions in <code>lib/auth.ts</code>; nothing above them changes.
+        Passwords are hashed with scrypt and a per-user salt; the cookie holds a random
+        token, not your identity, and signing out deletes the session server-side rather
+        than just clearing the cookie. This is a personal project, so hold it to that
+        standard and no further — use a password you don&apos;t use anywhere else.
       </div>
     </div>
   );

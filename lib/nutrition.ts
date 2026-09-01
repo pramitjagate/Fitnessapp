@@ -66,6 +66,11 @@ export function missingInputs(p: Profile): string[] {
   return missing;
 }
 
+/** Whether the person has answered the questions the calorie estimate needs. */
+export function needsProfileSetup(p: Profile): boolean {
+  return missingInputs(p).length > 0;
+}
+
 /** Mifflin-St Jeor. The sex term is a fixed offset, hence "unspecified" averaging. */
 export function bmr(p: Profile): number {
   const kg = p.bodyweightKg!;

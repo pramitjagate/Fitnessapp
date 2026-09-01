@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prettyDate } from "@/lib/dates";
+import { formatWeight, type Units } from "@/lib/units";
 import type { AdaptationDecision, PlannedSession } from "@/lib/types";
 
 export function liftLabel(lift: string): string {
@@ -10,22 +11,30 @@ export function phaseLabel(phase: string): string {
   return phase.replace(/_/g, " ");
 }
 
-/** "3 × 5 @ 66.25kg · RPE 7.5", or the establish-load state when weight is null. */
-export function prescription(sets: number, reps: string, weightKg: number | null, rpe: number) {
+/** "3 × 5 @ 145lb · RPE 7.5", or the establish-load state when weight is null. */
+export function prescription(
+  sets: number,
+  reps: string,
+  weightKg: number | null,
+  rpe: number,
+  units: Units = "kg",
+) {
   if (weightKg === null) {
     return `${sets} × ${reps} · find your working weight · RPE ${rpe}`;
   }
-  return `${sets} × ${reps} @ ${weightKg}kg · RPE ${rpe}`;
+  return `${sets} × ${reps} @ ${formatWeight(weightKg, units)} · RPE ${rpe}`;
 }
 
 export function SessionCard({
   session,
   isToday,
   logged,
+  units = "kg",
 }: {
   session: PlannedSession;
   isToday: boolean;
   logged: boolean;
+  units?: Units;
 }) {
   return (
     <article className={`card${isToday ? " card--today" : ""}`}>
@@ -47,7 +56,7 @@ export function SessionCard({
           <div className="lift" key={ml.lift}>
             <span className="lift-name">{liftLabel(ml.lift)}</span>
             <span className="lift-rx">
-              {prescription(ml.sets, ml.reps, ml.weightKg, ml.targetRpe)}
+              {prescription(ml.sets, ml.reps, ml.weightKg, ml.targetRpe, units)}
             </span>
           </div>
         ))}

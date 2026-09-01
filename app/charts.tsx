@@ -1,6 +1,7 @@
 import { prettyDate } from "@/lib/dates";
 import type { LiftSeries, RpePoint, WeekAdherence } from "@/lib/analytics";
 import { liftLabel } from "./components";
+import { kgToDisplay, type Units } from "@/lib/units";
 
 /* Hand-rolled SVG rather than a chart library. Three reasons: no dependency, no
    server-rendering workarounds, and sparklines are about forty lines of maths
@@ -29,7 +30,7 @@ function path(points: number[], min: number, max: number): { line: string; area:
 }
 
 /** One lift, eight weeks of load. Missed-rep weeks are marked. */
-export function LoadSparkline({ series }: { series: LiftSeries }) {
+export function LoadSparkline({ series, units = "kg" }: { series: LiftSeries; units?: Units }) {
   const values = series.points.map((p) => p.weightKg);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -44,8 +45,8 @@ export function LoadSparkline({ series }: { series: LiftSeries }) {
       <div className="spark-head">
         <span className="spark-lift">{liftLabel(series.lift)}</span>
         <span className="spark-now">
-          {series.currentKg}
-          <span className="spark-unit">kg</span>
+          {kgToDisplay(series.currentKg, units)}
+          <span className="spark-unit">{units}</span>
         </span>
       </div>
 

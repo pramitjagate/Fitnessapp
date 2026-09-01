@@ -1,29 +1,29 @@
-import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, decodeSession, type SessionUser } from "./auth";
+import { SESSION_COOKIE, userIdFor, type SessionUser } from "./auth";
+import { hashToken } from "./password";
 import { store } from "./store";
+
+// Re-exported so existing imports keep working; it is defined in ./auth.
+export { userIdFor };
 
 /**
  * Cookie access is split out from lib/auth.ts on purpose: `next/headers` is
  * server-only, and the client components (the avatar, the profile form) need
  * the pure helpers next door. Importing one module for `initials()` used to
  * drag `cookies()` into the browser bundle and fail the build.
+ *
+ * The cookie holds a random token and nothing else. Everything about who you
+ * are comes from looking that token up — the cookie used to carry a base64
+ * name and email, which meant anyone who could edit a cookie could be anyone.
  */
 export async function getUser(): Promise<SessionUser | null> {
   const jar = await cookies();
-  return decodeSession(jar.get(SESSION_COOKIE)?.value);
-}
+  const token = jar.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
 
-/**
- * A stable id derived from the email.
- *
- * Deterministic on purpose while auth is a shell: the same email lands on the
- * same data across sign-ins without a users table to look it up in. When
- * Auth.js arrives this becomes the provider's user id and nothing else changes,
- * because every call site already treats it as an opaque string.
- */
-export function userIdFor(email: string): string {
-  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
+  const row = await store.readAuthSession(hashToken(token));
+  if (!row) return null;
+  return { name: row.name, email: row.email };
 }
 
 export interface Scope {
@@ -35,6 +35,10 @@ export interface Scope {
  * The scope every page and route works in. Returns null when signed out —
  * proxy.ts will already have redirected, so this is the belt to its braces,
  * and it means no data access can be written without a user in hand.
+ *
+ * proxy.ts can only see that a cookie *exists*; it runs on the edge and cannot
+ * reach the database. This is where the token is actually checked, which is
+ * why every route calls it rather than trusting the redirect.
  */
 export async function getScope(): Promise<Scope | null> {
   const user = await getUser();

@@ -1,10 +1,10 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lte } from "drizzle-orm";
 import { db } from "../db/client";
 import * as t from "../db/schema";
-import { buildSeed } from "../seed";
+import { emptyDatabase } from "../seed";
 import {
+  BLANK_PROFILE,
   DEFAULT_MUSIC_PREFS,
-  DEFAULT_PROFILE,
   type AdaptationDecision,
   type Database,
   type FoodEntry,
@@ -15,7 +15,7 @@ import {
   type WeeklyPlan,
   type WeightEntry,
 } from "../types";
-import type { SessionUserRecord, Store } from "./types";
+import type { AccountRecord, SessionUserRecord, Store } from "./types";
 
 /* ---------------------------------------------------------------------------
  * The deployed path.
@@ -31,87 +31,6 @@ function planId(userId: string, weekStart: string, n: number) {
   return `${userId}:${weekStart}:${n}`;
 }
 
-async function writeSeed(userId: string) {
-  const seed = buildSeed();
-  const d = db();
-
-  await d.transaction(async (tx) => {
-    // A partial seed is worse than none — a user with sessions but no plan
-    // lands on a page that can't render.
-    await tx.delete(t.plans).where(eq(t.plans.userId, userId));
-    await tx.delete(t.sessions).where(eq(t.sessions.userId, userId));
-    await tx.delete(t.foodEntries).where(eq(t.foodEntries.userId, userId));
-    await tx.delete(t.weights).where(eq(t.weights.userId, userId));
-
-    await tx
-      .insert(t.programIntent)
-      .values({ userId, ...seed.intent })
-      .onConflictDoUpdate({ target: t.programIntent.userId, set: { ...seed.intent } });
-
-    await tx
-      .insert(t.profiles)
-      .values({ userId, ...seed.profile })
-      .onConflictDoNothing();
-
-    await tx
-      .insert(t.musicPrefs)
-      .values({ userId, ...seed.music })
-      .onConflictDoNothing();
-
-    await tx
-      .insert(t.adaptationState)
-      .values({
-        userId,
-        lastDecisions: seed.lastDecisions,
-        lastSource: seed.lastSource,
-        calorieAdjustment: 0,
-        nutritionDecisions: [],
-      })
-      .onConflictDoUpdate({
-        target: t.adaptationState.userId,
-        set: { lastDecisions: seed.lastDecisions, lastSource: seed.lastSource },
-      });
-
-    const planRows = [...seed.planHistory, seed.currentPlan].map((plan, i) => ({
-      id: planId(userId, plan.weekStart, i),
-      userId,
-      weekStart: plan.weekStart,
-      blockWeek: plan.blockWeek,
-      isCurrent: i === seed.planHistory.length,
-      plan,
-    }));
-    if (planRows.length) await tx.insert(t.plans).values(planRows);
-
-    if (seed.sessions.length) {
-      await tx.insert(t.sessions).values(
-        seed.sessions.map((s) => ({
-          id: `${userId}:${s.id}`,
-          userId,
-          date: s.date,
-          focus: s.focus,
-          status: s.status,
-          accessoriesCompleted: s.accessoriesCompleted,
-          feedback: s.feedback,
-          sleep: s.sleep,
-          sleepSource: s.sleepSource,
-          lifts: s.lifts,
-          soreness: s.soreness,
-          loggedAt: s.loggedAt,
-        }))
-      );
-    }
-
-    if (seed.food.length) {
-      await tx
-        .insert(t.foodEntries)
-        .values(seed.food.map((f) => ({ ...f, id: `${userId}:${f.id}`, userId })));
-    }
-    if (seed.weights.length) {
-      await tx.insert(t.weights).values(seed.weights.map((w) => ({ ...w, userId })));
-    }
-  });
-}
-
 export const pgStore: Store = {
   async ensureUser(user: SessionUserRecord) {
     const d = db();
@@ -124,19 +43,103 @@ export const pgStore: Store = {
         .onConflictDoNothing();
     }
 
-    if (!existing?.seededAt) {
-      // A brand new account lands on the eight weeks of history rather than an
-      // empty app with nothing to demonstrate.
-      await writeSeed(user.id);
-      await d
-        .insert(t.profiles)
-        .values({ userId: user.id, ...DEFAULT_PROFILE, name: user.name, email: user.email })
-        .onConflictDoUpdate({
-          target: t.profiles.userId,
-          set: { name: user.name, email: user.email },
-        });
-      await d.update(t.users).set({ seededAt: new Date() }).where(eq(t.users.id, user.id));
+    /*
+     * A new account gets a profile and nothing else. It used to get eight
+     * weeks of scripted history, which was right for a prototype and wrong
+     * the moment real people sign up: adapting someone's programme from
+     * fabricated sessions is the one failure this app cannot recover from.
+     * writeSeed() is kept for the demo script.
+     */
+    await d
+      .insert(t.profiles)
+      .values({ userId: user.id, ...BLANK_PROFILE, name: user.name, email: user.email })
+      .onConflictDoUpdate({
+        target: t.profiles.userId,
+        set: { name: user.name, email: user.email },
+      });
+  },
+
+  async findAccount(email) {
+    const d = db();
+    const [row] = await d
+      .select()
+      .from(t.users)
+      .where(eq(t.users.email, email.trim().toLowerCase()));
+    if (!row) return null;
+    return { id: row.id, email: row.email, name: row.name, passwordHash: row.passwordHash };
+  },
+
+  async createAccount(account: AccountRecord) {
+    const d = db();
+    /*
+     * A row can already exist for this id: user ids are derived from the email,
+     * so anyone whose data was written before sign-up existed is claiming their
+     * own rows here. The password is only attached when there isn't one —
+     * otherwise "create account" on an existing email would silently reset its
+     * password, which is an account takeover with a friendly button on it.
+     */
+    const [existing] = await d.select().from(t.users).where(eq(t.users.id, account.id));
+
+    if (!existing) {
+      await d.insert(t.users).values({
+        id: account.id,
+        email: account.email,
+        name: account.name,
+        passwordHash: account.passwordHash,
+      });
+      return;
     }
+
+    if (existing.passwordHash) throw new Error("That account already has a password.");
+
+    await d
+      .update(t.users)
+      .set({ name: account.name, passwordHash: account.passwordHash })
+      .where(eq(t.users.id, account.id));
+  },
+
+  async createAuthSession(tokenHash, userId, expiresAt) {
+    const d = db();
+    // Clear anything already expired. One cheap delete per sign-in keeps the
+    // table from growing without a scheduled job to prune it.
+    await d.delete(t.authSessions).where(lte(t.authSessions.expiresAt, new Date()));
+    await d.insert(t.authSessions).values({ tokenHash, userId, expiresAt });
+  },
+
+  async readAuthSession(tokenHash) {
+    const d = db();
+    const [row] = await d
+      .select({
+        id: t.users.id,
+        email: t.users.email,
+        name: t.users.name,
+        expiresAt: t.authSessions.expiresAt,
+      })
+      .from(t.authSessions)
+      .innerJoin(t.users, eq(t.users.id, t.authSessions.userId))
+      .where(eq(t.authSessions.tokenHash, tokenHash));
+
+    if (!row) return null;
+    // Expiry is checked here as well as pruned on write: a row that outlived
+    // its expiry between prunes must not authenticate anybody.
+    if (row.expiresAt.getTime() <= Date.now()) return null;
+    return { id: row.id, email: row.email, name: row.name };
+  },
+
+  async deleteAuthSession(tokenHash) {
+    const d = db();
+    await d.delete(t.authSessions).where(eq(t.authSessions.tokenHash, tokenHash));
+  },
+
+  /**
+   * One delete. Every other table references users.id with onDelete: "cascade"
+   * (see lib/db/schema.ts), so profile, plans, sessions, food, weights and
+   * every live session die with the row rather than needing to be named here
+   * one by one and risk missing one as the schema grows.
+   */
+  async deleteAccount(userId) {
+    const d = db();
+    await d.delete(t.users).where(eq(t.users.id, userId));
   },
 
   async read(userId): Promise<Database> {
@@ -174,7 +177,8 @@ export const pgStore: Store = {
       .orderBy(asc(t.weights.date));
 
     const current = planRows.find((p) => p.isCurrent) ?? planRows[planRows.length - 1];
-    const seedFallback = buildSeed();
+    // Nothing to fall back to any more — an account with no plan has no plan.
+    const blank = emptyDatabase();
 
     return {
       intent: intent
@@ -186,8 +190,8 @@ export const pgStore: Store = {
             notes: intent.notes,
             inDeficit: intent.inDeficit,
           }
-        : seedFallback.intent,
-      currentPlan: current?.plan ?? seedFallback.currentPlan,
+        : blank.intent,
+      currentPlan: current?.plan ?? blank.currentPlan,
       planHistory: planRows.filter((p) => !p.isCurrent).map((p) => p.plan),
       sessions: sessionRows.map((s) => ({
         id: s.id,
@@ -196,6 +200,7 @@ export const pgStore: Store = {
         status: s.status as LoggedSession["status"],
         accessoriesCompleted: s.accessoriesCompleted,
         feedback: s.feedback,
+        extraction: s.extraction,
         sleep: s.sleep as LoggedSession["sleep"],
         sleepSource: s.sleepSource as LoggedSession["sleepSource"],
         lifts: s.lifts,
@@ -232,7 +237,7 @@ export const pgStore: Store = {
             trainingSince: profileRow.trainingSince,
             gymNotes: profileRow.gymNotes,
           }
-        : DEFAULT_PROFILE,
+        : BLANK_PROFILE,
       food: foodRows.map((f) => ({
         id: f.id,
         date: f.date,
@@ -249,13 +254,27 @@ export const pgStore: Store = {
     };
   },
 
+  /**
+   * Start over. Deletes the training and nutrition history and drops the
+   * programme, leaving the account where a new one starts — at the setup
+   * questionnaire.
+   *
+   * Profile and music preferences survive deliberately: they are settings, not
+   * history, and having to re-enter your height because you wanted to clear a
+   * few bad weeks would be its own small insult. This used to write eight
+   * weeks of demo history instead, which made "reset" mean "replace my data
+   * with someone else's".
+   */
   async reset(userId) {
     const d = db();
-    await writeSeed(userId);
-    await d
-      .update(t.adaptationState)
-      .set({ calorieAdjustment: 0, nutritionDecisions: [] })
-      .where(eq(t.adaptationState.userId, userId));
+    await d.transaction(async (tx) => {
+      await tx.delete(t.sessions).where(eq(t.sessions.userId, userId));
+      await tx.delete(t.plans).where(eq(t.plans.userId, userId));
+      await tx.delete(t.foodEntries).where(eq(t.foodEntries.userId, userId));
+      await tx.delete(t.weights).where(eq(t.weights.userId, userId));
+      await tx.delete(t.programIntent).where(eq(t.programIntent.userId, userId));
+      await tx.delete(t.adaptationState).where(eq(t.adaptationState.userId, userId));
+    });
   },
 
   async saveSession(userId, s: LoggedSession) {
@@ -269,6 +288,7 @@ export const pgStore: Store = {
         status: s.status,
         accessoriesCompleted: s.accessoriesCompleted,
         feedback: s.feedback,
+        extraction: s.extraction ?? null,
         sleep: s.sleep,
         sleepSource: s.sleepSource,
         lifts: s.lifts,
@@ -284,6 +304,7 @@ export const pgStore: Store = {
           status: s.status,
           accessoriesCompleted: s.accessoriesCompleted,
           feedback: s.feedback,
+          extraction: s.extraction ?? null,
           sleep: s.sleep,
           sleepSource: s.sleepSource,
           lifts: s.lifts,
@@ -324,9 +345,17 @@ export const pgStore: Store = {
     });
   },
 
+  async saveIntent(userId, intent) {
+    await db()
+      .insert(t.programIntent)
+      .values({ userId, ...intent })
+      .onConflictDoUpdate({ target: t.programIntent.userId, set: { ...intent } });
+    return intent;
+  },
+
   async readProfile(userId) {
     const [row] = await db().select().from(t.profiles).where(eq(t.profiles.userId, userId));
-    if (!row) return DEFAULT_PROFILE;
+    if (!row) return BLANK_PROFILE;
     return {
       name: row.name,
       email: row.email,

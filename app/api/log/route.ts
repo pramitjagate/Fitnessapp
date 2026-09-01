@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { extractNote } from "@/lib/extract";
 import { getScope } from "@/lib/session";
 import { store } from "@/lib/store";
 import { LoggedLift, Sleep } from "@/lib/types";
@@ -36,6 +37,10 @@ export async function POST(request: Request) {
   }
 
   const d = parsed.data;
+
+  // Once, here — not on every planning pass. The raw note is stored beside it
+  // and never replaced.
+  const extraction = await extractNote(d.feedback);
   await store.saveSession(scope.userId, {
     id: `${d.date}-${Date.now()}`,
     date: d.date,
@@ -44,6 +49,7 @@ export async function POST(request: Request) {
     lifts: d.lifts,
     accessoriesCompleted: d.accessoriesCompleted,
     feedback: d.feedback,
+    extraction,
     sleep: d.sleep,
     sleepSource: d.sleep ? "self_report" : null,
     soreness: [],

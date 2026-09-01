@@ -70,7 +70,17 @@ export const LoggedLift = z.object({
   setsPrescribed: z.number().int().min(0),
   repsCompleted: z.string(),
   repsPrescribed: z.string(),
+  /** The working set — the top set when the lifter ramps. */
   weightKg: z.number(),
+  /**
+   * Every set's load, when they were not all the same.
+   *
+   * Ramping (55, 60, 65) is how most people actually lift, and the schema
+   * originally had one number per lift because the seeded demo used straight
+   * sets. `weightKg` stays the top set so charts and adaptation keep working;
+   * this preserves what was really done rather than discarding two thirds of it.
+   */
+  setWeightsKg: z.array(z.number()).optional(),
   rpe: z.number().min(1).max(10).nullable(),
   /**
    * The single most valuable field in the system. Perception explains a
@@ -83,6 +93,28 @@ export type LoggedLift = z.infer<typeof LoggedLift>;
 export const Sleep = z.enum(["poor", "okay", "good"]);
 export type Sleep = z.infer<typeof Sleep>;
 
+/**
+ * What a free-text note actually said, in fields the rest of the system can
+ * read. Derived from `feedback`, stored beside it, never replacing it.
+ */
+export const NoteExtraction = z.object({
+  lift: z.enum(LIFTS).nullable(),
+  signal: z.enum(["fatigue", "pain", "technique", "life", "positive", "none"]),
+  severity: z.enum(["low", "moderate", "high"]),
+  scope: z.enum(["lift", "session"]),
+  /**
+   * The field with consequences. True caps the week's decision at hold, so a
+   * false negative here is the expensive direction: erring toward true costs a
+   * week of unchanged load, erring toward false adds weight to something that
+   * hurts.
+   */
+  mentionsPain: z.boolean(),
+  /** The lifter's own words that drove the reading — never a paraphrase. */
+  quote: z.string(),
+  source: z.enum(["model", "rules"]),
+});
+export type NoteExtraction = z.infer<typeof NoteExtraction>;
+
 export const LoggedSession = z.object({
   id: z.string(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -92,6 +124,8 @@ export const LoggedSession = z.object({
   accessoriesCompleted: z.boolean(),
   /** Free text, stored verbatim. Never summarised on the way in. */
   feedback: z.string(),
+  /** Structure derived from `feedback` at log time. Null for older sessions. */
+  extraction: NoteExtraction.nullable().optional(),
   sleep: Sleep.nullable(),
   sleepSource: z.enum(["self_report", "wearable"]).nullable(),
   soreness: z.array(z.object({ muscleGroup: z.string(), severity: z.number().min(1).max(10) })),
@@ -217,6 +251,29 @@ export const DEFAULT_PROFILE: Profile = {
   nutritionGoal: "cut",
   trainingSince: "2024",
   gymNotes: "Trains alone. Safety pins on every squat and bench set.",
+};
+
+/**
+ * What a real new account's profile starts as — nothing invented.
+ *
+ * Same "unset" pattern as EMPTY_INTENT in lib/seed.ts: the numeric fields are
+ * null rather than a plausible-looking number nobody entered. A stranger's
+ * bodyweight quietly seeded onto a new account is worse than a blank one,
+ * because it looks like data instead of a placeholder — macroTargets() in
+ * lib/nutrition.ts already treats null as "ask, don't guess."
+ */
+export const BLANK_PROFILE: Profile = {
+  name: "",
+  email: "",
+  units: "kg",
+  bodyweightKg: null,
+  heightCm: null,
+  age: null,
+  sex: "unspecified",
+  activity: "light",
+  nutritionGoal: "recomp",
+  trainingSince: "",
+  gymNotes: "",
 };
 
 /**

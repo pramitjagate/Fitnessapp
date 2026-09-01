@@ -40,7 +40,7 @@ export default async function LogPage({ params }: { params: Promise<{ date: stri
         {session.coachingNote && <p className="note">{session.coachingNote}</p>}
       </section>
 
-      <LogForm session={session} existing={existing} />
+      <LogForm session={session} existing={existing} units={db.profile.units} />
     </>
   );
 }

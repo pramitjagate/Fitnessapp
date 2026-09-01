@@ -8,6 +8,8 @@ const LINKS = [
   { href: "/upcoming", label: "Upcoming", hint: "The evidence, and next week's plan" },
   { href: "/history", label: "History", hint: "Every logged session" },
   { href: "/music", label: "Music", hint: "Genres, artists, playlist shape" },
+  { href: "/plan/setup", label: "Training week", hint: "Your split, training days and rest days" },
+  { href: "/plan/new", label: "Add your own plan", hint: "Upload a PDF or DOC, or type one in" },
   { href: "/profile", label: "Profile", hint: "Your numbers and your programme" },
   { href: "/settings", label: "Settings", hint: "Theme, engine, reset" },
 ];

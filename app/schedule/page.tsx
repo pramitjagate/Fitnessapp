@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { EmptyProgramme } from "../empty-programme";
 import { DecisionList, SessionCard } from "../components";
 import { AdherenceStrip } from "../charts";
 import { adherence } from "@/lib/analytics";
 import { prettyRange, today } from "@/lib/dates";
 import { requireScope } from "@/lib/session";
+import { needsProgrammeSetup } from "@/lib/seed";
 import { store } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,8 @@ export const dynamic = "force-dynamic";
 export default async function Schedule() {
   const { userId } = await requireScope();
   const db = await store.read(userId);
+  if (needsProgrammeSetup(db)) return <EmptyProgramme />;
+
   const plan = db.currentPlan;
   const now = today();
   const loggedDates = new Set(db.sessions.map((s) => s.date));
@@ -51,6 +55,7 @@ export default async function Schedule() {
       <section>
         {plan.sessions.map((s) => (
           <SessionCard
+            units={db.profile.units}
             key={s.date}
             session={s}
             isToday={s.date === now}
@@ -73,6 +78,37 @@ export default async function Schedule() {
       <section>
         <h2>Turning up</h2>
         <AdherenceStrip data={adherence(db)} />
+      </section>
+
+      <section>
+        <h2>Change the plan</h2>
+        <p className="muted">
+          The week is yours to replace. Adapting is what happens between weeks; this is how
+          you change what is being adapted.
+        </p>
+        <Link className="card row-link" href="/plan/new">
+          <div>
+            <h3>Upload or type your own plan</h3>
+            <p className="tiny">
+              A PDF or Word file of the programme you follow, or build one by hand. You
+              review every line before it saves.
+            </p>
+          </div>
+          <span aria-hidden="true" className="row-link-arrow">
+            ›
+          </span>
+        </Link>
+        <Link className="card row-link" href="/plan/setup">
+          <div>
+            <h3>Change your split or training days</h3>
+            <p className="tiny">
+              Rebuilds the week from a different shape. Your logged history is untouched.
+            </p>
+          </div>
+          <span aria-hidden="true" className="row-link-arrow">
+            ›
+          </span>
+        </Link>
       </section>
 
       <div className="row">

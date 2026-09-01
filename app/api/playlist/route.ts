@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildArc, playlistPrompt, totalMinutes } from "@/lib/playlist";
+import { modelFor } from "@/lib/model";
 import { getScope } from "@/lib/session";
 import { store } from "@/lib/store";
 
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const message = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5",
+      model: modelFor("playlist"),
       max_tokens: 1500,
       system: SYSTEM,
       messages: [

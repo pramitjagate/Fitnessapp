@@ -1,44 +1,40 @@
 /* ---------------------------------------------------------------------------
- * THIS IS NOT AUTHENTICATION.
+ * Identity — the pure half.
  *
- * It is a signed-in *state* — enough to design and demonstrate the shell of an
- * account (avatar menu, login screen, protected routes) without pretending to
- * have solved identity. There is no password check, no hashing, no token, no
- * expiry, no CSRF protection. The cookie says who you claim to be and the app
- * believes it.
+ * Everything here is safe in a client bundle: no cookies, no request, no
+ * password handling. The account menu imports initials() from this file, and
+ * dragging node:crypto's scrypt into the browser to get two letters would be
+ * absurd. Hashing and token generation live in lib/password.ts; reading the
+ * cookie and validating the session lives in lib/session.ts.
  *
- * That is a deliberate scope line, not an oversight. Real auth means picking a
- * provider, owning a user table, and handling reset flows and sessions — none
- * of which teaches anything about adaptive programming, which is what this
- * prototype is for. When it is time, this file is the seam: replace these three
- * functions with Auth.js or Clerk and nothing above them changes.
+ * This file used to open with a note explaining that it was NOT authentication.
+ * It is now: passwords are scrypt-hashed with a per-user salt, sessions are
+ * random tokens stored as hashes with an expiry, and a cookie is no longer
+ * taken at its word.
  * ------------------------------------------------------------------------- */
 
+import { createHash } from "node:crypto";
+
 export const SESSION_COOKIE = "sw-session";
+
+/**
+ * A stable id derived from the email.
+ *
+ * It lives here rather than in lib/session.ts because it is pure: no cookies,
+ * no request. A script that needs to address a user's data shouldn't have to
+ * import `next/headers` to do it.
+ *
+ * Derived from the email rather than generated, which is what let the account
+ * data written before real sign-up survive it: the same person signing up with
+ * the same address lands on the rows they already had.
+ */
+export function userIdFor(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
+}
 
 export interface SessionUser {
   name: string;
   email: string;
-}
-
-export const DEMO_USER: SessionUser = {
-  name: "Demo Lifter",
-  email: "demo@secondweek.app",
-};
-
-export function encodeSession(user: SessionUser): string {
-  return Buffer.from(JSON.stringify(user), "utf8").toString("base64url");
-}
-
-export function decodeSession(raw: string | undefined): SessionUser | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    if (typeof parsed?.email !== "string" || typeof parsed?.name !== "string") return null;
-    return { name: parsed.name, email: parsed.email };
-  } catch {
-    return null;
-  }
 }
 
 /** "Demo Lifter" → "DL". Two letters is the most an avatar can carry. */

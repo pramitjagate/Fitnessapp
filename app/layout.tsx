@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Script from "next/script";
 import AccountMenu from "./account-menu";
 import TabBar from "./tabbar";
 import ThemeToggle from "./theme-toggle";
@@ -18,9 +19,9 @@ export const metadata: Metadata = {
  * dark gets a flash of light on every navigation — the classic hand-rolled
  * toggle bug.
  *
- * It lives as the first child of <body>, not inside a <head> element: the App
- * Router owns <head> itself, and nesting one is what produced the "<html>
- * cannot contain a nested <script>" warning.
+ * Rendered via next/script with strategy="beforeInteractive" (not a raw
+ * <script> tag) so it still runs before hydration without React warning
+ * that scripts inside components don't execute on the client.
  */
 const THEME_SCRIPT = `try{if(localStorage.getItem('sw-theme')==='dark'){document.documentElement.dataset.theme='dark'}}catch(e){}`;
 
@@ -34,9 +35,11 @@ export default async function RootLayout({
   const user = await getUser();
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <Script id="theme-init" strategy="beforeInteractive">
+          {THEME_SCRIPT}
+        </Script>
         <div className="shell">
           <div className="topbar">
             <Link href={user ? "/" : "/login"} className="brand">

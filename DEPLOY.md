@@ -48,28 +48,47 @@ Import the repo at vercel.com, then set environment variables:
 | `ANTHROPIC_API_KEY` | no | Turns on the model path for planning and playlists. Worth setting so a reviewer sees it. |
 | `ANTHROPIC_MODEL` | no | Defaults to `claude-sonnet-4-5`. |
 
-Deploy. First sign-in seeds that account's eight weeks of history automatically.
+Deploy. A new account starts empty and lands on the setup questions; `npm run
+seed-demo -- you@example.com` writes the eight-week demo history if you want it.
 
 ## 3. Before you share the link
 
 - [ ] **Sign in with two different emails** and confirm each sees its own data.
       This is the one test worth doing by hand every single time.
-- [ ] **Set `TZ=Asia/Kolkata`** in Vercel, or the seeded history — which is
-      positioned relative to *today* — sits a few hours off from your day.
+- [ ] **Set `APP_TIMEZONE`** (Vercel reserves `TZ` and will reject it). Without
+      it dates fall back to `America/Chicago`, and "today" is decided in the
+      wrong timezone for anyone who isn't there.
+- [ ] **Run `npm run db:push`** after any schema change. Nothing checks that the
+      schema in the repo matches the one in Neon; a missing column surfaces as a
+      500 on a page that worked yesterday.
 - [ ] **Rate-limit `/api/adapt` and `/api/playlist`.** They cost money per call
       and the URL is public. Vercel's firewall or an Upstash counter.
 - [ ] **Sentry**, or the first production error is one you hear about from
       whoever you sent the link to.
-- [ ] Check the demo account still works signed out — it's the way in most
-      people will use, and a reviewer who has to sign up closes the tab.
+- [ ] **Sign up, sign out, sign back in** on the deployed URL. Sign-out deletes
+      the session row, so the old cookie must be dead afterwards.
 
 ## Known limits of the current auth
 
-`lib/auth.ts` is a shell — no password check, unsigned cookie. The user id is a
-hash of the email, so anyone who knows an email can sign in as that person. That
-is fine for a demo with seeded data and **not** fine the moment anyone logs real
-training into it.
+Passwords are scrypt-hashed with a per-user salt, sessions are random 32-byte
+tokens stored as SHA-256 hashes with a 30-day expiry, and signing out deletes
+the session row rather than just clearing the cookie. The cookie is httpOnly,
+sameSite lax, and secure in production.
 
-Auth.js v5 drops into exactly that seam: replace `getUser()` and `userIdFor()`
-with the provider's session and user id, swap the cookie check in `proxy.ts`,
-and nothing else changes — every call site already treats the id as opaque.
+What is still missing, honestly:
+
+- **No email verification.** Anyone can sign up as any address. There is no
+  password reset either, which is the same missing piece: both need email.
+- **Rate limiting is per-process and in memory.** It survives neither a redeploy
+  nor a second serverless instance. It stops a script hammering one address from
+  one place, which is the attack that actually happens, and nothing more. The
+  real version is a counter in Postgres keyed on email and IP.
+- **No account deletion.** "Start over" clears the data; it does not remove the
+  user row.
+- **No 2FA, no session list, no "sign out everywhere".** The last one is a
+  single `DELETE ... WHERE user_id = $1` away, since sessions are rows.
+
+The user id is still `sha256(email)` rather than a generated key. That is what
+let accounts written before sign-up existed be claimed by the same address, and
+it means changing your email address would orphan your data — the day email
+changes are supported, that becomes a real generated id and a migration.

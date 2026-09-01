@@ -1,5 +1,6 @@
 import { addDays, dayName, iso, mondayOf } from "./dates";
-import { DEFAULT_MUSIC_PREFS, DEFAULT_PROFILE } from "./types";
+import { emptyExtraction, extractByRules } from "./extract";
+import { BLANK_PROFILE, DEFAULT_MUSIC_PREFS, DEFAULT_PROFILE } from "./types";
 import type {
   AdaptationDecision,
   FoodEntry,
@@ -267,6 +268,12 @@ function buildLoggedWeek(plan: WeeklyPlan, week: number): LoggedSession[] {
       lifts,
       accessoriesCompleted: true,
       feedback: feedbackParts.join(" "),
+      // The seeded notes get the same treatment a real one would, so the demo
+      // shows extraction working rather than describing it. Keyword pass, not
+      // the model: the seed has to be deterministic and free.
+      extraction: feedbackParts.length
+        ? extractByRules(feedbackParts.join(" "))
+        : emptyExtraction(),
       sleep,
       sleepSource: "self_report" as const,
       soreness,
@@ -355,4 +362,65 @@ export function buildSeed(): Database {
     calorieAdjustment: 0,
     nutritionDecisions: [],
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * What a real new account starts with: nothing.
+ *
+ * buildSeed() above is kept — eight weeks of scripted history is genuinely
+ * useful for demonstrating the product, and throwing it away to make a point
+ * would be wasteful. It is just no longer what a person who signs up receives.
+ * Handing someone fabricated training history and then adapting their real
+ * programme from it is the one thing this app must never do.
+ * ------------------------------------------------------------------------- */
+
+/** The programme nobody has described yet. `split: ""` is the "unset" marker. */
+export const EMPTY_INTENT: ProgramIntent = {
+  daysPerWeek: 4,
+  split: "",
+  goal: "",
+  progressionRule:
+    "Double progression. When every set hits the top of the rep range at or below target RPE, add the smallest plate pair. Never add weight on a schedule.",
+  notes: "",
+  inDeficit: false,
+};
+
+/** A week with no sessions in it, so the shape is valid before a plan exists. */
+export function emptyPlan(from = new Date()): WeeklyPlan {
+  const start = mondayOf(from);
+  return {
+    weekStart: iso(start),
+    weekEnd: iso(addDays(start, 6)),
+    blockWeek: 1,
+    summary: "No plan yet",
+    sessions: [],
+    adjustments: [],
+    rationale: "",
+  };
+}
+
+export function emptyDatabase(profile = BLANK_PROFILE): Database {
+  return {
+    intent: EMPTY_INTENT,
+    currentPlan: emptyPlan(),
+    planHistory: [],
+    sessions: [],
+    lastDecisions: [],
+    lastSource: null,
+    music: DEFAULT_MUSIC_PREFS,
+    profile,
+    food: [],
+    weights: [],
+    calorieAdjustment: 0,
+    nutritionDecisions: [],
+  };
+}
+
+/**
+ * Whether the app still needs to be told what the person is training.
+ * Checked before a week can be generated — adapting a programme nobody has
+ * described means inventing one and calling it theirs.
+ */
+export function needsProgrammeSetup(db: Database): boolean {
+  return !db.intent.split.trim() || db.currentPlan.sessions.length === 0;
 }

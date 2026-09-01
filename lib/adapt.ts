@@ -1,11 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { addDays, dayName, iso, mondayOf } from "./dates";
+import { modelFor } from "./model";
 import {
   AdaptationDecision,
   type Database,
   type LoggedLift,
   type LoggedSession,
+  type NoteExtraction,
   type PlannedSession,
   type WeeklyPlan,
 } from "./types";
@@ -46,6 +48,7 @@ export interface LiftEvidence {
     repsPrescribed: string;
     sleep: string | null;
     feedback: string;
+    extraction?: NoteExtraction | null;
   }[];
 }
 
@@ -98,6 +101,7 @@ export function gatherEvidence(db: Database, weeks = 3): LiftEvidence[] {
         repsPrescribed: l.repsPrescribed,
         sleep: s.sleep,
         feedback: s.feedback,
+        extraction: s.extraction ?? null,
       });
     }
   }
@@ -145,6 +149,24 @@ export function decideByRules(
         lift: ev.lift,
         decision: "hold",
         reason: "Not trained yet this week, so there is no new evidence. Last week's data already shaped the current plan.",
+      };
+    }
+
+    /*
+     * Pain outranks everything below it.
+     *
+     * The model (or the keyword pass) finds it in the note; this decides what
+     * happens, and what happens is nothing. Fatigue and pain read almost the
+     * same in casual language and lead to opposite actions, so the asymmetry is
+     * deliberate: holding a load for a week when it was only fatigue costs
+     * almost nothing, and adding weight to something that hurts can cost
+     * months.
+     */
+    if (latest.extraction?.mentionsPain) {
+      return {
+        lift: ev.lift,
+        decision: "hold",
+        reason: `You mentioned pain — "${latest.extraction.quote || latest.feedback}". Nothing goes up on a lift that hurts. Hold the load, and if it repeats, it needs a person rather than an app.`,
       };
     }
 
@@ -257,7 +279,7 @@ export async function decideByModel(
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const message = await client.messages.create({
-    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5",
+    model: modelFor("adapt"),
     max_tokens: 2000,
     system: SYSTEM_PROMPT,
     messages: [

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildSeed } from "../seed";
+import { emptyDatabase } from "../seed";
 import {
+  BLANK_PROFILE,
   DEFAULT_MUSIC_PREFS,
-  DEFAULT_PROFILE,
   type AdaptationDecision,
   type Database,
   type FoodEntry,
@@ -14,7 +14,7 @@ import {
   type WeeklyPlan,
   type WeightEntry,
 } from "../types";
-import type { SessionUserRecord, Store } from "./types";
+import type { AccountRecord, SessionUserRecord, Store } from "./types";
 
 /* ---------------------------------------------------------------------------
  * The zero-setup path. Used whenever DATABASE_URL is absent — clone, npm run
@@ -43,9 +43,11 @@ function load(userId: string): Database {
   ensureDir();
   const file = fileFor(userId);
   if (!fs.existsSync(file)) {
-    const seeded = buildSeed();
-    fs.writeFileSync(file, JSON.stringify(seeded, null, 2));
-    return seeded;
+    // A new account starts empty. buildSeed() still exists for the demo
+    // script; it is not what a person who signs up receives.
+    const fresh = emptyDatabase();
+    fs.writeFileSync(file, JSON.stringify(fresh, null, 2));
+    return fresh;
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Database;
@@ -54,12 +56,12 @@ function load(userId: string): Database {
     parsed.calorieAdjustment ??= 0;
     parsed.nutritionDecisions ??= [];
     parsed.music = { ...DEFAULT_MUSIC_PREFS, ...(parsed.music ?? {}) };
-    parsed.profile = { ...DEFAULT_PROFILE, ...(parsed.profile ?? {}) };
+    parsed.profile = { ...BLANK_PROFILE, ...(parsed.profile ?? {}) };
     return parsed;
   } catch {
-    const seeded = buildSeed();
-    fs.writeFileSync(file, JSON.stringify(seeded, null, 2));
-    return seeded;
+    const fresh = emptyDatabase();
+    fs.writeFileSync(file, JSON.stringify(fresh, null, 2));
+    return fresh;
   }
 }
 
@@ -67,6 +69,42 @@ function save(userId: string, db: Database) {
   ensureDir();
   fs.writeFileSync(fileFor(userId), JSON.stringify(db, null, 2));
 }
+
+/* ---------------------------------------------------------------------------
+ * Accounts and sessions live in one file rather than one per user, because
+ * looking someone up by email is the first thing a sign-in has to do and
+ * scanning a directory to do it would be silly.
+ *
+ * A JSON file is not a database: two simultaneous sign-ups can interleave a
+ * read and a write and lose one. That is acceptable here precisely because
+ * this path is the single-developer, no-setup one — anything with real
+ * concurrent users has DATABASE_URL set and is on Postgres.
+ * ------------------------------------------------------------------------- */
+
+interface AccountsFile {
+  accounts: Record<string, AccountRecord>;
+  sessions: Record<string, { userId: string; expiresAt: string }>;
+}
+
+const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
+
+function loadAccounts(): AccountsFile {
+  ensureDir();
+  if (!fs.existsSync(ACCOUNTS_FILE)) return { accounts: {}, sessions: {} };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8")) as Partial<AccountsFile>;
+    return { accounts: parsed.accounts ?? {}, sessions: parsed.sessions ?? {} };
+  } catch {
+    return { accounts: {}, sessions: {} };
+  }
+}
+
+function saveAccounts(data: AccountsFile) {
+  ensureDir();
+  fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(data, null, 2));
+}
+
+const emailKey = (email: string) => email.trim().toLowerCase();
 
 export const jsonStore: Store = {
   async ensureUser(user: SessionUserRecord) {
@@ -78,12 +116,74 @@ export const jsonStore: Store = {
     }
   },
 
+  async findAccount(email) {
+    return loadAccounts().accounts[emailKey(email)] ?? null;
+  },
+
+  async createAccount(account: AccountRecord) {
+    const data = loadAccounts();
+    data.accounts[emailKey(account.email)] = account;
+    saveAccounts(data);
+  },
+
+  async createAuthSession(tokenHash, userId, expiresAt) {
+    const data = loadAccounts();
+    // Expired rows are cleared on write rather than by a scheduled job. There
+    // is no scheduler on this path, and an unbounded sessions map is a leak.
+    const now = Date.now();
+    for (const [hash, row] of Object.entries(data.sessions)) {
+      if (new Date(row.expiresAt).getTime() <= now) delete data.sessions[hash];
+    }
+    data.sessions[tokenHash] = { userId, expiresAt: expiresAt.toISOString() };
+    saveAccounts(data);
+  },
+
+  async readAuthSession(tokenHash) {
+    const data = loadAccounts();
+    const row = data.sessions[tokenHash];
+    if (!row) return null;
+    if (new Date(row.expiresAt).getTime() <= Date.now()) return null;
+
+    const account = Object.values(data.accounts).find((a) => a.id === row.userId);
+    if (!account) return null;
+    return { id: account.id, email: account.email, name: account.name };
+  },
+
+  async deleteAuthSession(tokenHash) {
+    const data = loadAccounts();
+    delete data.sessions[tokenHash];
+    saveAccounts(data);
+  },
+
+  /**
+   * Accounts and sessions live in the shared file (see above), so this has to
+   * find its own account and drop it, plus every session issued for it — one
+   * row keyed by userId, unlike Postgres, doesn't clean up on its own. The
+   * per-user data file is the rest of what a real account owns.
+   */
+  async deleteAccount(userId) {
+    const data = loadAccounts();
+    const emailKey = Object.entries(data.accounts).find(([, a]) => a.id === userId)?.[0];
+    if (emailKey) delete data.accounts[emailKey];
+    for (const [hash, row] of Object.entries(data.sessions)) {
+      if (row.userId === userId) delete data.sessions[hash];
+    }
+    saveAccounts(data);
+
+    const file = fileFor(userId);
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  },
+
   async read(userId) {
     return load(userId);
   },
 
+  /** Profile and music survive: they are settings, not history. Same as the pg path. */
   async reset(userId) {
-    save(userId, buildSeed());
+    const before = load(userId);
+    const fresh = emptyDatabase(before.profile);
+    fresh.music = before.music;
+    save(userId, fresh);
   },
 
   async saveSession(userId, session: LoggedSession) {
@@ -107,6 +207,13 @@ export const jsonStore: Store = {
     db.lastDecisions = decisions;
     db.lastSource = source;
     save(userId, db);
+  },
+
+  async saveIntent(userId, intent) {
+    const db = load(userId);
+    db.intent = intent;
+    save(userId, db);
+    return intent;
   },
 
   async readProfile(userId) {

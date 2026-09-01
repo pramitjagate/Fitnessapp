@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { EmptyProgramme } from "./empty-programme";
 import { liftLabel, phaseLabel, prescription } from "./components";
 import { LoadSparkline } from "./charts";
 import PlaylistButton from "./playlist";
 import { liftSeries } from "@/lib/analytics";
+import { kgToDisplay } from "@/lib/units";
 import { prettyDate, today } from "@/lib/dates";
 import { requireScope } from "@/lib/session";
+import { needsProgrammeSetup } from "@/lib/seed";
 import { store } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +17,13 @@ export default async function Today() {
   const db = await store.read(userId);
   const now = today();
   const plan = db.currentPlan;
+
+  /*
+   * Before this branch existed, an account with no plan showed "Rest day" every
+   * day of the week — technically true and completely useless. An empty app has
+   * to say what to do next, not describe its own emptiness.
+   */
+  if (needsProgrammeSetup(db)) return <EmptyProgramme heading="Let's build your week" />;
 
   const session = plan.sessions.find((s) => s.date === now);
   const logged = db.sessions.some((s) => s.date === now);
@@ -89,8 +99,8 @@ export default async function Today() {
                   <span className="establish">find your weight</span>
                 ) : (
                   <>
-                    {ml.weightKg}
-                    <span className="big-lift-unit">kg</span>
+                    {kgToDisplay(ml.weightKg, db.profile.units)}
+                    <span className="big-lift-unit">{db.profile.units}</span>
                   </>
                 )}
               </div>
@@ -134,7 +144,7 @@ export default async function Today() {
           <h2>Where these lifts have been</h2>
           <div className="sparks">
             {todaysSeries.map((s) => (
-              <LoadSparkline key={s.lift} series={s} />
+              <LoadSparkline key={s.lift} series={s} units={db.profile.units} />
             ))}
           </div>
         </section>
