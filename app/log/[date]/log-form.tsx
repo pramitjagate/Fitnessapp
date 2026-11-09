@@ -1,10 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { liftLabel } from "@/app/components";
 import { fillForward, topSet } from "@/lib/set-ramp";
-import type { PlannedSession, LoggedSession, Sleep } from "@/lib/types";
+import type {
+  LoggedAccessory,
+  LoggedLift,
+  PlannedSession,
+  LoggedSession,
+  Sleep,
+} from "@/lib/types";
 import { displayToKg, kgToDisplay, weightStep, type Units } from "@/lib/units";
 
 /*
@@ -12,21 +18,96 @@ import { displayToKg, kgToDisplay, weightStep, type Units } from "@/lib/units";
  * once, on the way out. The previous version converted on every keystroke and
  * back again on every render, which is how a 55lb set becomes 54.9.
  */
-type LiftEntry = {
-  lift: string;
-  setsPrescribed: number;
-  repsPrescribed: string;
+
+/** How a lift or accessory was loaded. Shared so both get "weight per set". */
+type Load = {
   /** Used when every set is the same weight. */
   weight: number;
-  /** Used when the lift is ramped. One entry per prescribed set. */
+  /** Used when the lift is ramped. One entry per set. */
   setWeights: number[];
   /** Which of those the lifter set themselves — the rest are suggestions. */
   touched: boolean[];
   ramped: boolean;
+  /** True when the numbers came from last week rather than the plan or a blank. */
+  carried: boolean;
+};
+
+type LiftEntry = {
+  lift: string;
+  setsPrescribed: number;
+  repsPrescribed: string;
+  load: Load;
   repsCompleted: string;
   rpe: string;
   hitAllReps: boolean;
 };
+
+/** An accessory in the form. Weight 0 means bodyweight, stored as null. */
+type AccessoryEntry = {
+  exercise: string;
+  setsPrescribed: number;
+  repsPrescribed: string;
+  sets: number;
+  load: Load;
+  repsCompleted: string;
+  done: boolean;
+};
+
+function flatLoad(weight: number, sets: number, carried = false): Load {
+  return {
+    weight,
+    setWeights: Array.from({ length: sets }, (_, i) => (i === 0 ? weight : 0)),
+    touched: Array.from({ length: sets }, (_, i) => i === 0),
+    ramped: false,
+    carried,
+  };
+}
+
+/** Per-set weights that are real numbers, not guesses — a save, or last week's sets. */
+function rampedLoad(weights: number[], carried = false): Load {
+  return {
+    weight: topSet(weights),
+    setWeights: weights,
+    touched: weights.map(() => true),
+    ramped: true,
+    carried,
+  };
+}
+
+function loadTop(l: Load): number {
+  return l.ramped ? topSet(l.setWeights) : l.weight;
+}
+
+/**
+ * The starting load for a set count, from (in order) this session's own save,
+ * the last time it was done, or a fallback weight. Last time's ramp only
+ * carries over when the set count matches — five sets of last week's three
+ * would be inventing two.
+ */
+function startingLoad(
+  saved: { weightKg: number | null; setWeightsKg?: number[] } | undefined,
+  previous: { weightKg: number | null; setWeightsKg?: number[] } | undefined,
+  sets: number,
+  fallbackKg: number | null,
+  units: Units,
+  /** Added to every carried set, so last week's ramp lands on this week's top set. */
+  shiftKg = 0
+): Load {
+  const show = (kg: number) => kgToDisplay(Math.max(0, kg), units);
+  if (saved) {
+    if (saved.setWeightsKg?.length) return rampedLoad(saved.setWeightsKg.map(show));
+    return flatLoad(show(saved.weightKg ?? 0), sets);
+  }
+  if (previous) {
+    if (previous.setWeightsKg?.length === sets) {
+      return rampedLoad(previous.setWeightsKg.map((kg) => show(kg + shiftKg)), true);
+    }
+    if (fallbackKg === null && previous.weightKg !== null) {
+      return flatLoad(show(previous.weightKg), sets, true);
+    }
+  }
+  return flatLoad(show(fallbackKg ?? 0), sets);
+}
 
 /**
  * Weight and RPE move in fixed increments, so a stepper beats a keyboard: no
@@ -89,13 +170,124 @@ function Stepper({
   );
 }
 
+/**
+ * "Same every set" or "Weight per set", for any exercise. `children` are the
+ * steppers that sit beside the weight — RPE for a main lift, sets for an
+ * accessory.
+ */
+function LoadInput({
+  load,
+  units,
+  step,
+  max,
+  explain,
+  onChange,
+  children,
+}: {
+  load: Load;
+  units: Units;
+  step: number;
+  max: number;
+  /** The long note about suggestions — main lifts only, where the top set matters. */
+  explain?: boolean;
+  onChange: (l: Load) => void;
+  children?: ReactNode;
+}) {
+  /** One set changed: record it as the lifter's, then re-propose the ones after it. */
+  function setSet(k: number, value: number) {
+    const weights = load.setWeights.slice();
+    const touched = load.touched.slice();
+    weights[k] = value;
+    touched[k] = true;
+    onChange({ ...load, touched, setWeights: fillForward(weights, touched, step, max) });
+  }
+
+  /** Switching to ramped seeds set one from the flat weight and proposes the rest. */
+  function setRamped(ramped: boolean) {
+    if (load.ramped === ramped) return;
+    if (!ramped) {
+      onChange({ ...load, ramped: false, weight: topSet(load.setWeights) || load.weight });
+      return;
+    }
+    const n = load.setWeights.length;
+    const touched = Array.from({ length: n }, (_, k) => k === 0);
+    const weights = Array.from({ length: n }, (_, k) => (k === 0 ? load.weight : 0));
+    onChange({ ...load, ramped: true, touched, setWeights: fillForward(weights, touched, step, max) });
+  }
+
+  return (
+    <>
+      <div className="seg" role="group" aria-label="How the sets were loaded">
+        <button type="button" aria-pressed={!load.ramped} onClick={() => setRamped(false)}>
+          Same every set
+        </button>
+        <button type="button" aria-pressed={load.ramped} onClick={() => setRamped(true)}>
+          Weight per set
+        </button>
+      </div>
+
+      {load.ramped ? (
+        <>
+          <div className="set-list">
+            {load.setWeights.map((w, k) => (
+              <div className="set-row" key={k}>
+                <Stepper
+                  compact
+                  label={`Set ${k + 1}`}
+                  value={w}
+                  step={step}
+                  min={0}
+                  max={max}
+                  suffix={units}
+                  onChange={(v) => setSet(k, v)}
+                />
+                {!load.touched[k] && <span className="chip chip--suggested">suggested</span>}
+              </div>
+            ))}
+          </div>
+          {explain && (
+            <p className="tiny">
+              Anything marked <em>suggested</em> is the app continuing your own jump — 50 then 55
+              proposes 60, and 60 then 60 proposes 60. It is a filled-in field, not a record:
+              change any of them and the ones after it follow. Top set {topSet(load.setWeights)}
+              {units} is what the progression reads.
+            </p>
+          )}
+          {children && <div className="stepper-grid">{children}</div>}
+        </>
+      ) : (
+        <div className="stepper-grid">
+          <Stepper
+            label="Weight"
+            value={load.weight}
+            step={step}
+            min={0}
+            max={max}
+            suffix={units}
+            onChange={(v) => onChange({ ...load, weight: v })}
+          />
+          {children}
+        </div>
+      )}
+
+      {load.carried && <p className="tiny">Carried over from last time.</p>}
+    </>
+  );
+}
+
 export default function LogForm({
   session,
   existing,
+  lastLift = {},
+  lastAccessory = {},
   units = "kg",
 }: {
   session: PlannedSession;
   existing: LoggedSession | null;
+  /** Most recent log of each main lift before this session. */
+  lastLift?: Record<string, LoggedLift>;
+  /** Most recent log of each accessory, keyed by lower-cased exercise name. */
+  lastAccessory?: Record<string, LoggedAccessory>;
   units?: Units;
 }) {
   const router = useRouter();
@@ -107,62 +299,66 @@ export default function LogForm({
 
   const [lifts, setLifts] = useState<LiftEntry[]>(() =>
     session.mainLifts.map((ml) => {
-      const prev = existing?.lifts.find((l) => l.lift === ml.lift);
+      const saved = existing?.lifts.find((l) => l.lift === ml.lift);
+      const prev = lastLift[ml.lift];
       // Prescribed values pre-fill so a session that went to plan is three
-      // taps. You only edit what differed.
-      const weight = kgToDisplay(prev?.weightKg ?? ml.weightKg ?? 0, units);
-      const saved = prev?.setWeightsKg?.map((kg) => kgToDisplay(kg, units));
-      const sets = ml.sets;
-
+      // taps. If last week was ramped, the same ramp comes back, moved so its
+      // top set is this week's prescription — the coach decides the top set,
+      // your warm-up pattern is yours.
+      const shift = prev && ml.weightKg !== null ? ml.weightKg - prev.weightKg : 0;
       return {
         lift: ml.lift,
-        setsPrescribed: sets,
+        setsPrescribed: ml.sets,
         repsPrescribed: ml.reps,
-        weight,
-        setWeights: saved ?? Array.from({ length: sets }, (_, i) => (i === 0 ? weight : 0)),
-        // Everything reloaded from a saved session is the lifter's, not a guess.
-        touched: saved ? saved.map(() => true) : Array.from({ length: sets }, (_, i) => i === 0),
-        ramped: Boolean(saved?.length),
-        repsCompleted: prev?.repsCompleted ?? ml.reps,
-        rpe: prev?.rpe != null ? String(prev.rpe) : String(ml.targetRpe),
-        hitAllReps: prev?.hitAllReps ?? true,
+        load: startingLoad(saved, prev, ml.sets, ml.weightKg, units, shift),
+        repsCompleted: saved?.repsCompleted ?? ml.reps,
+        rpe: saved?.rpe != null ? String(saved.rpe) : String(ml.targetRpe),
+        hitAllReps: saved?.hitAllReps ?? true,
       };
     })
   );
 
   const [feedback, setFeedback] = useState(existing?.feedback ?? "");
   const [sleep, setSleep] = useState<Sleep | null>(existing?.sleep ?? null);
-  const [accessories, setAccessories] = useState(existing?.accessoriesCompleted ?? true);
+  const [accessories, setAccessories] = useState<AccessoryEntry[]>(() =>
+    session.accessories.map((a) => {
+      // This session's own save first, then the last time you did it.
+      const saved = existing?.accessories?.find((e) => e.exercise === a.exercise);
+      const prev = lastAccessory[a.exercise.toLowerCase()];
+      const sets = saved?.setsCompleted || a.sets;
+      return {
+        exercise: a.exercise,
+        setsPrescribed: a.sets,
+        repsPrescribed: a.reps,
+        sets,
+        load: startingLoad(saved, prev, sets, null, units),
+        repsCompleted: saved?.repsCompleted ?? a.reps,
+        done: saved?.done ?? existing?.accessoriesCompleted ?? true,
+      };
+    })
+  );
 
   function update(i: number, patch: Partial<LiftEntry>) {
     setLifts((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
 
-  /** One set changed: record it as the lifter's, then re-propose the ones after it. */
-  function setSetWeight(i: number, setIndex: number, value: number) {
-    setLifts((prev) =>
-      prev.map((l, idx) => {
-        if (idx !== i) return l;
-        const weights = l.setWeights.slice();
-        const touched = l.touched.slice();
-        weights[setIndex] = value;
-        touched[setIndex] = true;
-        return { ...l, touched, setWeights: fillForward(weights, touched, step, maxWeight) };
-      })
-    );
+  function updateAccessory(i: number, patch: Partial<AccessoryEntry>) {
+    setAccessories((prev) => prev.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
   }
 
-  /** Switching to ramped seeds set one from the flat weight and proposes the rest. */
-  function setRamped(i: number, ramped: boolean) {
-    setLifts((prev) =>
-      prev.map((l, idx) => {
-        if (idx !== i || l.ramped === ramped) return l;
-        if (!ramped) return { ...l, ramped: false, weight: topSet(l.setWeights) || l.weight };
-        const touched = Array.from({ length: l.setsPrescribed }, (_, k) => k === 0);
-        const weights = Array.from({ length: l.setsPrescribed }, (_, k) =>
-          k === 0 ? l.weight : 0
-        );
-        return { ...l, ramped: true, touched, setWeights: fillForward(weights, touched, step, maxWeight) };
+  /** Changing an accessory's set count grows or trims its per-set weights to match. */
+  function setAccessorySets(i: number, sets: number) {
+    setAccessories((prev) =>
+      prev.map((a, idx) => {
+        if (idx !== i) return a;
+        const n = Math.max(1, sets);
+        const weights = Array.from({ length: n }, (_, k) => a.load.setWeights[k] ?? 0);
+        const touched = Array.from({ length: n }, (_, k) => a.load.touched[k] ?? false);
+        return {
+          ...a,
+          sets,
+          load: { ...a.load, touched, setWeights: fillForward(weights, touched, step, maxWeight) },
+        };
       })
     );
   }
@@ -178,7 +374,20 @@ export default function LogForm({
           date: session.date,
           focus: session.focus,
           status,
-          accessoriesCompleted: accessories,
+          accessoriesCompleted: accessories.every((a) => a.done),
+          accessories: accessories.map((a) => {
+            const top = loadTop(a.load);
+            return {
+              exercise: a.exercise,
+              setsCompleted: a.done ? a.sets : 0,
+              repsCompleted: a.repsCompleted,
+              weightKg: top > 0 ? displayToKg(top, units) : null,
+              setWeightsKg: a.load.ramped
+                ? a.load.setWeights.map((w) => displayToKg(w, units))
+                : undefined,
+              done: a.done,
+            };
+          }),
           feedback,
           sleep,
           lifts: lifts.map((l) => ({
@@ -189,8 +398,10 @@ export default function LogForm({
             repsPrescribed: l.repsPrescribed,
             // The top set is what goes in weightKg — see topSet() for why it
             // is not an average.
-            weightKg: displayToKg(l.ramped ? topSet(l.setWeights) : l.weight, units),
-            setWeightsKg: l.ramped ? l.setWeights.map((w) => displayToKg(w, units)) : undefined,
+            weightKg: displayToKg(loadTop(l.load), units),
+            setWeightsKg: l.load.ramped
+              ? l.load.setWeights.map((w) => displayToKg(w, units))
+              : undefined,
             rpe: l.rpe === "" ? null : Number(l.rpe),
             hitAllReps: l.hitAllReps,
           })),
@@ -217,76 +428,23 @@ export default function LogForm({
               </span>
             </div>
 
-            <div className="seg" role="group" aria-label="How the sets were loaded">
-              <button type="button" aria-pressed={!l.ramped} onClick={() => setRamped(i, false)}>
-                Same every set
-              </button>
-              <button type="button" aria-pressed={l.ramped} onClick={() => setRamped(i, true)}>
-                Weight per set
-              </button>
-            </div>
-
-            {l.ramped ? (
-              <>
-                <div className="set-list">
-                  {l.setWeights.map((w, k) => (
-                    <div className="set-row" key={k}>
-                      <Stepper
-                        compact
-                        label={`Set ${k + 1}`}
-                        value={w}
-                        step={step}
-                        min={0}
-                        max={maxWeight}
-                        suffix={units}
-                        onChange={(v) => setSetWeight(i, k, v)}
-                      />
-                      {!l.touched[k] && <span className="chip chip--suggested">suggested</span>}
-                    </div>
-                  ))}
-                </div>
-                <p className="tiny">
-                  Anything marked <em>suggested</em> is the app continuing your own jump — 50 then
-                  55 proposes 60, and 60 then 60 proposes 60. It is a filled-in field, not a
-                  record: change any of them and the ones after it follow. Top set{" "}
-                  {topSet(l.setWeights)}
-                  {units} is what the progression reads.
-                </p>
-              </>
-            ) : (
-              <div className="stepper-grid">
-                <Stepper
-                  label="Weight"
-                  value={l.weight}
-                  step={step}
-                  min={0}
-                  max={maxWeight}
-                  suffix={units}
-                  onChange={(v) => update(i, { weight: v })}
-                />
-                <Stepper
-                  label="RPE"
-                  value={Number(l.rpe) || 0}
-                  step={0.5}
-                  min={1}
-                  max={10}
-                  onChange={(v) => update(i, { rpe: String(v) })}
-                />
-              </div>
-            )}
-
-            {l.ramped && (
-              <div className="stepper-grid">
-                <Stepper
-                  label="RPE"
-                  value={Number(l.rpe) || 0}
-                  step={0.5}
-                  min={1}
-                  max={10}
-                  onChange={(v) => update(i, { rpe: String(v) })}
-                />
-              </div>
-            )}
+            <LoadInput
+              load={l.load}
+              units={units}
+              step={step}
+              max={maxWeight}
+              explain
+              onChange={(load) => update(i, { load })}
+            >
+              <Stepper
+                label="RPE"
+                value={Number(l.rpe) || 0}
+                step={0.5}
+                min={1}
+                max={10}
+                onChange={(v) => update(i, { rpe: String(v) })}
+              />
+            </LoadInput>
 
             <div className="field">
               <span className="field-label">Reps done</span>
@@ -322,6 +480,73 @@ export default function LogForm({
         ))}
       </section>
 
+      {accessories.length > 0 && (
+        <section>
+          <h2>Accessories</h2>
+          {accessories.map((a, i) => (
+            <div className={a.done ? "card" : "card card--muted"} key={a.exercise}>
+              <div className="card-head">
+                <h3>{a.exercise}</h3>
+                <span className="tiny">
+                  Prescribed {a.setsPrescribed} × {a.repsPrescribed}
+                </span>
+              </div>
+
+              <div className="seg" role="group" aria-label={`Did you do ${a.exercise}?`}>
+                <button
+                  type="button"
+                  aria-pressed={a.done}
+                  onClick={() => updateAccessory(i, { done: true })}
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={!a.done}
+                  onClick={() => updateAccessory(i, { done: false })}
+                >
+                  Skipped
+                </button>
+              </div>
+
+              {a.done && (
+                <>
+                  <LoadInput
+                    load={a.load}
+                    units={units}
+                    step={step}
+                    max={maxWeight}
+                    onChange={(load) => updateAccessory(i, { load })}
+                  >
+                    <Stepper
+                      label="Sets"
+                      value={a.sets}
+                      step={1}
+                      min={1}
+                      max={20}
+                      onChange={(v) => setAccessorySets(i, v)}
+                    />
+                  </LoadInput>
+                  <div className="field">
+                    <span className="field-label">Reps done</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={a.repsCompleted}
+                      onChange={(e) => updateAccessory(i, { repsCompleted: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          <p className="tiny">
+            Leave weight at 0 for bodyweight work like dips or push-ups. Whatever you save here
+            fills in next time, per set if you ramped.
+          </p>
+        </section>
+      )}
+
       <section>
         <div className="card">
           <h3>How did it go?</h3>
@@ -350,21 +575,6 @@ export default function LogForm({
           <p className="tiny">
             This is what separates &ldquo;the programme is too much&rdquo; from &ldquo;you had four
             hours&rsquo; sleep&rdquo;. Without it, life stress gets mistaken for training stress.
-          </p>
-
-          <div className="seg" role="group" aria-label="Accessories" style={{ marginTop: "0.5rem" }}>
-            <button type="button" aria-pressed={accessories} onClick={() => setAccessories(true)}>
-              Accessories done
-            </button>
-            <button type="button" aria-pressed={!accessories} onClick={() => setAccessories(false)}>
-              Skipped accessories
-            </button>
-          </div>
-          <p className="tiny">
-            Accessories are everything on the day that isn&apos;t one of the five tracked barbell
-            lifts — curls, lateral raises, cable rows, leg press. They&apos;re logged as done or
-            not done rather than set by set, because the weekly decision is driven by the main
-            lifts and one more field per curl is how a log stops getting filled in.
           </p>
         </div>
       </section>

@@ -18,14 +18,34 @@ interface Result {
   segments?: { name: string; tracks: Track[] }[];
 }
 
-export default function PlaylistButton({ date }: { date: string }) {
+interface ExportResult {
+  url: string;
+  matched: number;
+  total: number;
+  missing: Track[];
+}
+
+export default function PlaylistButton({
+  date,
+  focus,
+  spotifyConnected,
+}: {
+  date: string;
+  focus: string;
+  spotifyConnected: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState<ExportResult | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   async function generate() {
     setBusy(true);
     setError(null);
+    setExported(null);
+    setExportError(null);
     try {
       const res = await fetch("/api/playlist", {
         method: "POST",
@@ -39,6 +59,26 @@ export default function PlaylistButton({ date }: { date: string }) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function exportToSpotify() {
+    if (!result?.segments) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch("/api/playlist/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, focus, segments: result.segments }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not export to Spotify");
+      setExported(data);
+    } catch (e) {
+      setExportError((e as Error).message);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -115,6 +155,33 @@ export default function PlaylistButton({ date }: { date: string }) {
                 than claiming a specific track exists. If a search comes back empty, that&apos;s
                 the model being wrong, visibly.
               </p>
+            )}
+
+            {result.source === "model" && spotifyConnected && (
+              <div className="row">
+                <button type="button" onClick={exportToSpotify} disabled={exporting}>
+                  {exporting ? "Exporting…" : "Export to Spotify"}
+                </button>
+              </div>
+            )}
+
+            {exportError && <div className="banner banner--warn">{exportError}</div>}
+
+            {exported && (
+              <div className="banner">
+                <p>
+                  Created in your Spotify account —{" "}
+                  <a href={exported.url} target="_blank" rel="noreferrer noopener">
+                    open it
+                  </a>
+                  . Matched {exported.matched} of {exported.total} suggested tracks.
+                </p>
+                {exported.missing.length > 0 && (
+                  <p className="tiny">
+                    Not found on Spotify: {exported.missing.map((t) => `${t.title} — ${t.artist}`).join(", ")}
+                  </p>
+                )}
+              </div>
             )}
 
             {result.source === "arc-only" && (

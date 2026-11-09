@@ -7,6 +7,7 @@ const KEYS = [
   "ANTHROPIC_MODEL_PLAN",
   "ANTHROPIC_MODEL_ADAPT",
   "ANTHROPIC_MODEL_PLAYLIST",
+  "ANTHROPIC_MODEL_MEAL",
 ];
 
 describe("modelFor", () => {
@@ -46,6 +47,15 @@ describe("modelFor", () => {
     expect(modelFor("extract")).toBe("tuned-model");
     expect(modelFor("plan")).toBe("shared-model");
     expect(modelFor("adapt")).toBe("shared-model");
+  });
+
+  it("keeps meal photos on their own default instead of the shared model", () => {
+    // The shared model is usually a cheap text one; a photo estimate on it
+    // lands straight in the calorie total. Only the meal variable moves it.
+    process.env.ANTHROPIC_MODEL = "shared-model";
+    expect(modelFor("meal")).toBe("claude-opus-5-5");
+    process.env.ANTHROPIC_MODEL_MEAL = "meal-model";
+    expect(modelFor("meal")).toBe("meal-model");
   });
 
   it("treats a blank value as unset rather than as a model named nothing", () => {

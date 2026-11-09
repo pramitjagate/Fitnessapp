@@ -3,7 +3,7 @@ import { z } from "zod";
 import { extractNote } from "@/lib/extract";
 import { getScope } from "@/lib/session";
 import { store } from "@/lib/store";
-import { LoggedLift, Sleep } from "@/lib/types";
+import { LoggedAccessory, LoggedLift, Sleep } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -15,6 +15,7 @@ const Body = z.object({
   feedback: z.string(),
   sleep: Sleep.nullable(),
   lifts: z.array(LoggedLift),
+  accessories: z.array(LoggedAccessory).optional(),
 });
 
 export async function POST(request: Request) {
@@ -47,7 +48,10 @@ export async function POST(request: Request) {
     focus: d.focus,
     status: d.status,
     lifts: d.lifts,
-    accessoriesCompleted: d.accessoriesCompleted,
+    accessories: d.accessories,
+    accessoriesCompleted: d.accessories
+      ? d.accessories.every((a) => a.done)
+      : d.accessoriesCompleted,
     feedback: d.feedback,
     extraction,
     sleep: d.sleep,

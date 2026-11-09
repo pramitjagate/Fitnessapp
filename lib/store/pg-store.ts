@@ -12,6 +12,7 @@ import {
   type MusicPrefs,
   type NutritionDecision,
   type Profile,
+  type SpotifyConnection,
   type WeeklyPlan,
   type WeightEntry,
 } from "../types";
@@ -204,6 +205,7 @@ export const pgStore: Store = {
         sleep: s.sleep as LoggedSession["sleep"],
         sleepSource: s.sleepSource as LoggedSession["sleepSource"],
         lifts: s.lifts,
+        accessories: s.accessories ?? undefined,
         soreness: s.soreness,
         loggedAt: s.loggedAt,
       })),
@@ -220,7 +222,6 @@ export const pgStore: Store = {
             warmupMinutes: musicRow.warmupMinutes,
             cardioMinutes: musicRow.cardioMinutes,
             calmerOnTechniqueDays: musicRow.calmerOnTechniqueDays,
-            spotifyConnected: musicRow.spotifyConnected,
           }
         : DEFAULT_MUSIC_PREFS,
       profile: profileRow
@@ -292,6 +293,7 @@ export const pgStore: Store = {
         sleep: s.sleep,
         sleepSource: s.sleepSource,
         lifts: s.lifts,
+        accessories: s.accessories ?? null,
         soreness: s.soreness,
         loggedAt: s.loggedAt,
       })
@@ -308,6 +310,7 @@ export const pgStore: Store = {
           sleep: s.sleep,
           sleepSource: s.sleepSource,
           lifts: s.lifts,
+          accessories: s.accessories ?? null,
           soreness: s.soreness,
           loggedAt: s.loggedAt,
         },
@@ -392,7 +395,6 @@ export const pgStore: Store = {
       warmupMinutes: row.warmupMinutes,
       cardioMinutes: row.cardioMinutes,
       calmerOnTechniqueDays: row.calmerOnTechniqueDays,
-      spotifyConnected: row.spotifyConnected,
     };
   },
 
@@ -402,6 +404,51 @@ export const pgStore: Store = {
       .values({ userId, ...prefs })
       .onConflictDoUpdate({ target: t.musicPrefs.userId, set: { ...prefs } });
     return prefs;
+  },
+
+  async readSpotifyConnection(userId) {
+    const [row] = await db()
+      .select()
+      .from(t.spotifyConnections)
+      .where(eq(t.spotifyConnections.userId, userId));
+    if (!row) return null;
+    return {
+      spotifyUserId: row.spotifyUserId,
+      displayName: row.displayName,
+      accessToken: row.accessToken,
+      refreshToken: row.refreshToken,
+      expiresAt: row.expiresAt.toISOString(),
+      scope: row.scope,
+    };
+  },
+
+  async saveSpotifyConnection(userId, connection: SpotifyConnection) {
+    await db()
+      .insert(t.spotifyConnections)
+      .values({
+        userId,
+        spotifyUserId: connection.spotifyUserId,
+        displayName: connection.displayName,
+        accessToken: connection.accessToken,
+        refreshToken: connection.refreshToken,
+        expiresAt: new Date(connection.expiresAt),
+        scope: connection.scope,
+      })
+      .onConflictDoUpdate({
+        target: t.spotifyConnections.userId,
+        set: {
+          spotifyUserId: connection.spotifyUserId,
+          displayName: connection.displayName,
+          accessToken: connection.accessToken,
+          refreshToken: connection.refreshToken,
+          expiresAt: new Date(connection.expiresAt),
+          scope: connection.scope,
+        },
+      });
+  },
+
+  async deleteSpotifyConnection(userId) {
+    await db().delete(t.spotifyConnections).where(eq(t.spotifyConnections.userId, userId));
   },
 
   async addFood(userId, entry: FoodEntry) {

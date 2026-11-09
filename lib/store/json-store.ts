@@ -11,6 +11,7 @@ import {
   type MusicPrefs,
   type NutritionDecision,
   type Profile,
+  type SpotifyConnection,
   type WeeklyPlan,
   type WeightEntry,
 } from "../types";
@@ -84,18 +85,24 @@ function save(userId: string, db: Database) {
 interface AccountsFile {
   accounts: Record<string, AccountRecord>;
   sessions: Record<string, { userId: string; expiresAt: string }>;
+  /** Keyed by userId, same as sessions — tokens, not app data, so they live here. */
+  spotify: Record<string, SpotifyConnection>;
 }
 
 const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
 
 function loadAccounts(): AccountsFile {
   ensureDir();
-  if (!fs.existsSync(ACCOUNTS_FILE)) return { accounts: {}, sessions: {} };
+  if (!fs.existsSync(ACCOUNTS_FILE)) return { accounts: {}, sessions: {}, spotify: {} };
   try {
     const parsed = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8")) as Partial<AccountsFile>;
-    return { accounts: parsed.accounts ?? {}, sessions: parsed.sessions ?? {} };
+    return {
+      accounts: parsed.accounts ?? {},
+      sessions: parsed.sessions ?? {},
+      spotify: parsed.spotify ?? {},
+    };
   } catch {
-    return { accounts: {}, sessions: {} };
+    return { accounts: {}, sessions: {}, spotify: {} };
   }
 }
 
@@ -168,10 +175,27 @@ export const jsonStore: Store = {
     for (const [hash, row] of Object.entries(data.sessions)) {
       if (row.userId === userId) delete data.sessions[hash];
     }
+    delete data.spotify[userId];
     saveAccounts(data);
 
     const file = fileFor(userId);
     if (fs.existsSync(file)) fs.unlinkSync(file);
+  },
+
+  async readSpotifyConnection(userId) {
+    return loadAccounts().spotify[userId] ?? null;
+  },
+
+  async saveSpotifyConnection(userId, connection: SpotifyConnection) {
+    const data = loadAccounts();
+    data.spotify[userId] = connection;
+    saveAccounts(data);
+  },
+
+  async deleteSpotifyConnection(userId) {
+    const data = loadAccounts();
+    delete data.spotify[userId];
+    saveAccounts(data);
   },
 
   async read(userId) {

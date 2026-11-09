@@ -95,11 +95,31 @@ function Toggle({
   );
 }
 
-export default function MusicForm({ initial }: { initial: MusicPrefs }) {
+export default function MusicForm({
+  initial,
+  spotifyConnected,
+  spotifyDisplayName,
+}: {
+  initial: MusicPrefs;
+  spotifyConnected: boolean;
+  spotifyDisplayName: string | null;
+}) {
   const [prefs, setPrefs] = useState<MusicPrefs>(initial);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connected, setConnected] = useState(spotifyConnected);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  async function disconnectSpotify() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/spotify/disconnect", { method: "POST" });
+      if (res.ok) setConnected(false);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   function set<K extends keyof MusicPrefs>(key: K, value: MusicPrefs[K]) {
     setPrefs((p) => ({ ...p, [key]: value }));
@@ -283,24 +303,47 @@ export default function MusicForm({ initial }: { initial: MusicPrefs }) {
             <div>
               <h3>Spotify</h3>
               <p className="tiny">
-                Not connected. Today the app builds the arc and suggests tracks, and each
-                track opens a Spotify search rather than claiming a specific track exists.
+                {connected
+                  ? "Connected. Playlists the app builds can be created directly in your account."
+                  : "Not connected. Today the app builds the arc and suggests tracks, and each track opens a Spotify search rather than claiming a specific track exists."}
               </p>
             </div>
-            <span className="chip">Not connected</span>
+            <span className={`chip${connected ? " chip--today" : ""}`}>
+              {connected ? "Connected" : "Not connected"}
+            </span>
           </div>
-          <p className="tiny">
-            Connecting an account would let the app create the playlist in place and read
-            back what you actually listened to — which is the interesting half, because it
-            turns taste into evidence rather than a setting. It needs an OAuth client this
-            prototype deliberately doesn&apos;t ship.
-          </p>
-          <div className="row">
-            <button type="button" className="btn btn--ghost" disabled>
-              Connect Spotify
-            </button>
-            <span className="tiny">Coming with OAuth</span>
-          </div>
+          {connected ? (
+            <>
+              {spotifyDisplayName && (
+                <p className="tiny">
+                  Connected as <strong>{spotifyDisplayName}</strong>.
+                </p>
+              )}
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={disconnectSpotify}
+                  disabled={disconnecting}
+                >
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="tiny">
+                Connecting an account lets the app create the playlist in place and, later,
+                read back what you actually listened to — which turns taste into evidence
+                rather than a setting.
+              </p>
+              <div className="row">
+                <a className="btn" href="/api/spotify/connect">
+                  Connect Spotify
+                </a>
+              </div>
+            </>
+          )}
         </article>
       </section>
 

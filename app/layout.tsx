@@ -9,7 +9,7 @@ import { getUser } from "@/lib/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Second Week",
+  title: "Kaizen",
   description:
     "An adaptive strength coach that changes your plan on patterns, not single sessions.",
 };
@@ -43,7 +43,7 @@ export default async function RootLayout({
         <div className="shell">
           <div className="topbar">
             <Link href={user ? "/" : "/login"} className="brand">
-              Second Week
+              Kaizen
             </Link>
             <div className="bar-right">
               {user && (

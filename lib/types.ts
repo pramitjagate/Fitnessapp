@@ -90,6 +90,23 @@ export const LoggedLift = z.object({
 });
 export type LoggedLift = z.infer<typeof LoggedLift>;
 
+/**
+ * What was done for one accessory. Lighter than LoggedLift on purpose — no RPE,
+ * no ramp — because the weekly decision runs on the main lifts. This is here so
+ * a chest-and-triceps day records more than its one bench press.
+ */
+export const LoggedAccessory = z.object({
+  exercise: z.string(),
+  setsCompleted: z.number().int().min(0),
+  repsCompleted: z.string(),
+  /** The top set. Null for bodyweight work — dips, push-ups — where 0kg would read as a typo. */
+  weightKg: z.number().min(0).nullable(),
+  /** Every set's load, when they were not all the same. Same rule as LoggedLift. */
+  setWeightsKg: z.array(z.number().min(0)).optional(),
+  done: z.boolean(),
+});
+export type LoggedAccessory = z.infer<typeof LoggedAccessory>;
+
 export const Sleep = z.enum(["poor", "okay", "good"]);
 export type Sleep = z.infer<typeof Sleep>;
 
@@ -121,7 +138,10 @@ export const LoggedSession = z.object({
   focus: z.string(),
   status: z.enum(["completed", "skipped"]),
   lifts: z.array(LoggedLift),
+  /** True when every accessory was done. Kept alongside `accessories` for older sessions. */
   accessoriesCompleted: z.boolean(),
+  /** Per-exercise detail. Absent on sessions logged before it existed. */
+  accessories: z.array(LoggedAccessory).optional(),
   /** Free text, stored verbatim. Never summarised on the way in. */
   feedback: z.string(),
   /** Structure derived from `feedback` at log time. Null for older sessions. */
@@ -191,7 +211,6 @@ export const MusicPrefs = z.object({
   cardioMinutes: z.number().int().min(0).max(60),
   /** Lighter, less lyric-heavy music on technique days. */
   calmerOnTechniqueDays: z.boolean(),
-  spotifyConnected: z.boolean(),
 });
 export type MusicPrefs = z.infer<typeof MusicPrefs>;
 
@@ -205,8 +224,23 @@ export const DEFAULT_MUSIC_PREFS: MusicPrefs = {
   warmupMinutes: 10,
   cardioMinutes: 22,
   calmerOnTechniqueDays: true,
-  spotifyConnected: false,
 };
+
+/**
+ * A connected Spotify account. Server-internal only — this never reaches a
+ * client as JSON (the tokens in it are credentials), unlike everything else
+ * in this file. Not a zod schema because nothing untrusted is ever parsed
+ * into it; it's built from Spotify's own token response.
+ */
+export interface SpotifyConnection {
+  spotifyUserId: string;
+  displayName: string | null;
+  accessToken: string;
+  refreshToken: string;
+  /** ISO timestamp. Spotify access tokens last one hour. */
+  expiresAt: string;
+  scope: string;
+}
 
 /**
  * Activity *outside* training. Sessions are counted separately from the logged
@@ -241,7 +275,7 @@ export type Profile = z.infer<typeof Profile>;
 
 export const DEFAULT_PROFILE: Profile = {
   name: "Demo Lifter",
-  email: "demo@secondweek.app",
+  email: "demo@kaizen.app",
   units: "kg",
   bodyweightKg: 78,
   heightCm: 178,
@@ -289,7 +323,7 @@ export const FoodEntry = z.object({
   protein: z.number().min(0).max(400),
   carbs: z.number().min(0).max(800),
   fat: z.number().min(0).max(400),
-  source: z.enum(["recipe", "custom"]),
+  source: z.enum(["recipe", "custom", "photo"]),
 });
 export type FoodEntry = z.infer<typeof FoodEntry>;
 

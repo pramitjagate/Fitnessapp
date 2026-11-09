@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prettyDate } from "@/lib/dates";
 import { requireScope } from "@/lib/session";
 import { store } from "@/lib/store";
+import { lastLoads } from "@/lib/analytics";
 import LogForm from "./log-form";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ export default async function LogPage({ params }: { params: Promise<{ date: stri
   }
 
   const existing = db.sessions.find((s) => s.date === date) ?? null;
+  // What you did last time, so this session starts from it rather than from zero.
+  const last = lastLoads(db, date);
 
   return (
     <>
@@ -40,7 +43,13 @@ export default async function LogPage({ params }: { params: Promise<{ date: stri
         {session.coachingNote && <p className="note">{session.coachingNote}</p>}
       </section>
 
-      <LogForm session={session} existing={existing} units={db.profile.units} />
+      <LogForm
+        session={session}
+        existing={existing}
+        lastLift={last.lifts}
+        lastAccessory={last.accessories}
+        units={db.profile.units}
+      />
     </>
   );
 }

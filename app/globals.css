@@ -1,5 +1,5 @@
 /* ============================================================================
-   Second Week — theme tokens
+   Kaizen — theme tokens
 
    Light is the default; dark lives under [data-theme="dark"] and is reachable
    from the toggle in the top bar. Colour is deliberately unfinished — the
@@ -187,6 +187,7 @@ section { display: flex; flex-direction: column; gap: 0.9rem; }
 .card:hover { border-color: var(--rule); }
 .card--today { border-color: var(--accent-dim); background: var(--ground-2); }
 .card--today:hover { border-color: var(--accent); }
+.card--muted { opacity: 0.6; }
 
 .card-head {
   display: flex;
@@ -401,6 +402,66 @@ footer.foot {
 .hero--rest { border-left-color: var(--rule); }
 .hero-sub, .hero-note { color: var(--ink-2); font-size: 0.96rem; line-height: 1.6; max-width: 52ch; }
 .hero-note { margin-top: 0.55rem; }
+.hero-actions { margin-top: 0.9rem; }
+
+/* ---- daily quote -------------------------------------------------------- */
+
+.quote {
+  margin: 0;
+  padding: 0.2rem 0 0.2rem 1rem;
+  border-left: 2px solid var(--accent-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.quote blockquote {
+  margin: 0;
+  font-size: 1.02rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.quote figcaption { font-size: 0.78rem; color: var(--ink-3); }
+.quote figcaption::before { content: "— "; }
+
+/* ---- dashboard tiles ---------------------------------------------------- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.7rem;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  text-decoration: none;
+  transition: border-color 0.18s ease;
+}
+.tile:hover { border-color: var(--accent); }
+.tile .stat-n { font-size: 1.6rem; }
+
+.week-dots { display: flex; gap: 3px; margin-top: auto; }
+.wd {
+  flex: 1;
+  height: 1.3rem;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--ink-3);
+  background: var(--hairline);
+}
+.wd--rest { background: transparent; }
+.wd--planned { box-shadow: inset 0 0 0 1px var(--rule); background: transparent; color: var(--ink-2); }
+.wd--done { background: var(--accent); color: var(--ground); }
+.wd--missed, .wd--skipped { background: var(--cut-soft); color: var(--cut); }
+.wd--today { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px); }
@@ -987,6 +1048,35 @@ footer.foot {
 .custom-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .custom-add input[type="text"] { flex: 2 1 10rem; }
 .custom-add input[type="number"] { flex: 1 1 5rem; }
+
+/* ---- meal photo --------------------------------------------------------- */
+
+.meal-photo { display: flex; flex-direction: column; gap: 0.75rem; }
+.meal-preview {
+  width: 100%;
+  max-height: 16rem;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+}
+.meal-rows { display: flex; flex-direction: column; gap: 0.6rem; }
+.meal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.meal-row:last-child { border-bottom: none; }
+.meal-row--off { opacity: 0.45; }
+.meal-row-head { display: flex; gap: 0.4rem; align-items: center; }
+.meal-row-head input { flex: 1; }
+.meal-macros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.4rem; }
+.meal-macros label { display: flex; flex-direction: column; gap: 0.15rem; }
+.meal-macros input { width: 100%; min-width: 0; }
+.chip--conf-high { background: var(--accent-soft); color: var(--accent); }
+.chip--conf-medium { background: var(--hold-bg); color: var(--hold); }
+.chip--conf-low { background: var(--cut-soft); color: var(--cut); }
 
 .evidence-line { color: var(--ink-2); font-weight: 500; text-align: left; }
 

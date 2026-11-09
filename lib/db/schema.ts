@@ -2,6 +2,7 @@ import { boolean, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex } 
 import type {
   Accessory,
   AdaptationDecision,
+  LoggedAccessory,
   LoggedLift,
   NoteExtraction,
   NutritionDecision,
@@ -98,7 +99,24 @@ export const musicPrefs = pgTable("music_prefs", {
   warmupMinutes: integer("warmup_minutes").notNull(),
   cardioMinutes: integer("cardio_minutes").notNull(),
   calmerOnTechniqueDays: boolean("calmer_on_technique_days").notNull(),
-  spotifyConnected: boolean("spotify_connected").notNull(),
+});
+
+/**
+ * One Spotify account per app account, kept separate from music_prefs on
+ * purpose: tokens are credentials, not preferences. music_prefs round-trips
+ * through the client on every save — a table a client form payload can
+ * never touch is what keeps "connected" from being a boolean someone can
+ * just send `true` for.
+ */
+export const spotifyConnections = pgTable("spotify_connections", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  spotifyUserId: text("spotify_user_id").notNull(),
+  displayName: text("display_name"),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  scope: text("scope").notNull(),
+  connectedAt: timestamp("connected_at").notNull().defaultNow(),
 });
 
 /**
@@ -130,6 +148,8 @@ export const sessions = pgTable(
     sleep: text("sleep"),
     sleepSource: text("sleep_source"),
     lifts: jsonb("lifts").$type<LoggedLift[]>().notNull(),
+    // Nullable: sessions logged before per-accessory detail existed have none.
+    accessories: jsonb("accessories").$type<LoggedAccessory[]>(),
     soreness: jsonb("soreness").$type<{ muscleGroup: string; severity: number }[]>().notNull(),
     loggedAt: text("logged_at").notNull(),
   },

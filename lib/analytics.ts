@@ -1,5 +1,5 @@
 import { iso, mondayOf } from "./dates";
-import type { Database, LoggedSession } from "./types";
+import type { Database, LoggedAccessory, LoggedLift, LoggedSession } from "./types";
 
 export interface WeekPoint {
   weekStart: string;
@@ -129,4 +129,28 @@ export function rpeTrend(db: Database, weeks = 9): RpePoint[] {
       weekStart,
       avgRpe: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
     }));
+}
+
+/**
+ * The most recent completed log of each main lift and each accessory before a
+ * date. This is what carries a session's loads into the next one: last week's
+ * ramp, last week's pushdown weight. Accessories are keyed by lower-cased name
+ * so "Tricep Pushdown" and "tricep pushdown" are the same exercise.
+ */
+export function lastLoads(
+  db: Database,
+  before: string
+): { lifts: Record<string, LoggedLift>; accessories: Record<string, LoggedAccessory> } {
+  const lifts: Record<string, LoggedLift> = {};
+  const accessories: Record<string, LoggedAccessory> = {};
+  // Oldest first, so a later session overwrites an earlier one.
+  const ordered = [...db.sessions].sort((a, b) => a.date.localeCompare(b.date));
+  for (const s of ordered) {
+    if (s.date >= before || s.status === "skipped") continue;
+    for (const l of s.lifts) lifts[l.lift] = l;
+    for (const a of s.accessories ?? []) {
+      if (a.done) accessories[a.exercise.toLowerCase()] = a;
+    }
+  }
+  return { lifts, accessories };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { adherence, liftSeries, rpeTrend } from "@/lib/analytics";
+import { adherence, lastLoads, liftSeries, rpeTrend } from "@/lib/analytics";
 import { buildSeed } from "@/lib/seed";
-import type { Database, LoggedSession } from "@/lib/types";
+import type { Database, LoggedAccessory, LoggedSession } from "@/lib/types";
 
 function loggedSession(over: Partial<LoggedSession> = {}): LoggedSession {
   return {
@@ -106,5 +106,53 @@ describe("adherence and effort", () => {
     for (const p of rpeTrend(db([loggedSession({ lifts: [lift({ rpe: 8 })] })]), 2)) {
       expect(p.avgRpe === null || (p.avgRpe >= 1 && p.avgRpe <= 10)).toBe(true);
     }
+  });
+});
+
+describe("lastLoads — what carries into the next session", () => {
+  const pushdown = (weightKg: number, over: Partial<LoggedAccessory> = {}): LoggedAccessory => ({
+    exercise: "Tricep pushdown",
+    setsCompleted: 3,
+    repsCompleted: "12",
+    weightKg,
+    done: true,
+    ...over,
+  });
+
+  it("takes the most recent session even when sessions arrive out of order", () => {
+    const last = lastLoads(
+      db([
+        loggedSession({ id: "b", date: "2026-08-31", accessories: [pushdown(27.5)] }),
+        loggedSession({ id: "a", date: "2026-08-24", accessories: [pushdown(25)] }),
+      ]),
+      "2026-09-07",
+    );
+    expect(last.accessories["tricep pushdown"].weightKg).toBe(27.5);
+  });
+
+  it("ignores the session being logged, skipped sessions, and skipped exercises", () => {
+    const last = lastLoads(
+      db([
+        loggedSession({ id: "a", date: "2026-08-24", accessories: [pushdown(25)], lifts: [lift({ weightKg: 60 })] }),
+        loggedSession({ id: "b", date: "2026-08-31", status: "skipped", accessories: [pushdown(40)] }),
+        loggedSession({ id: "c", date: "2026-09-03", accessories: [pushdown(45, { done: false })] }),
+        loggedSession({ id: "d", date: "2026-09-07", accessories: [pushdown(50)], lifts: [lift({ weightKg: 70 })] }),
+      ]),
+      "2026-09-07",
+    );
+    expect(last.accessories["tricep pushdown"].weightKg).toBe(25);
+    expect(last.lifts.row.weightKg).toBe(60);
+  });
+
+  it("keeps per-set weights so a ramp comes back next week", () => {
+    const last = lastLoads(
+      db([
+        loggedSession({
+          accessories: [pushdown(25, { setWeightsKg: [20, 22.5, 25] })],
+        }),
+      ]),
+      "2026-09-07",
+    );
+    expect(last.accessories["tricep pushdown"].setWeightsKg).toEqual([20, 22.5, 25]);
   });
 });

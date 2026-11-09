@@ -4,9 +4,24 @@ import { store } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export default async function MusicPage() {
+const SPOTIFY_BANNER = {
+  connected: "Spotify connected.",
+  denied: "Spotify connection cancelled. Nothing was changed.",
+  error: "Could not connect Spotify. Try again.",
+} as const;
+
+export default async function MusicPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ spotify?: string }>;
+}) {
   const { userId } = await requireScope();
-  const prefs = await store.readMusicPrefs(userId);
+  const [prefs, connection] = await Promise.all([
+    store.readMusicPrefs(userId),
+    store.readSpotifyConnection(userId),
+  ]);
+  const { spotify } = await searchParams;
+  const banner = SPOTIFY_BANNER[spotify as keyof typeof SPOTIFY_BANNER];
 
   return (
     <>
@@ -22,7 +37,17 @@ export default async function MusicPage() {
         </p>
       </section>
 
-      <MusicForm initial={prefs} />
+      {banner && (
+        <section>
+          <div className={`banner${spotify === "error" ? " banner--warn" : ""}`}>{banner}</div>
+        </section>
+      )}
+
+      <MusicForm
+        initial={prefs}
+        spotifyConnected={connection !== null}
+        spotifyDisplayName={connection?.displayName ?? null}
+      />
     </>
   );
 }

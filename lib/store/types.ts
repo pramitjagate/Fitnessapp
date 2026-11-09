@@ -7,6 +7,7 @@ import type {
   NutritionDecision,
   ProgramIntent,
   Profile,
+  SpotifyConnection,
   WeeklyPlan,
   WeightEntry,
 } from "../types";
@@ -80,6 +81,11 @@ export interface Store {
   saveProfile(userId: string, profile: Profile): Promise<Profile>;
   readMusicPrefs(userId: string): Promise<MusicPrefs>;
   saveMusicPrefs(userId: string, prefs: MusicPrefs): Promise<MusicPrefs>;
+
+  /** null when no Spotify account is connected. */
+  readSpotifyConnection(userId: string): Promise<SpotifyConnection | null>;
+  saveSpotifyConnection(userId: string, connection: SpotifyConnection): Promise<void>;
+  deleteSpotifyConnection(userId: string): Promise<void>;
 
   addFood(userId: string, entry: FoodEntry): Promise<void>;
   removeFood(userId: string, id: string): Promise<void>;

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Recipe } from "@/lib/recipes";
 import type { FoodEntry } from "@/lib/types";
+import PhotoMeal from "./photo-meal";
 
 interface Props {
   date: string;
@@ -165,6 +166,8 @@ export default function FoodLog({
 
         {error && <div className="banner banner--warn">{error}</div>}
       </article>
+
+      <PhotoMeal date={date} />
 
       <article className="card">
         <div className="card-head">

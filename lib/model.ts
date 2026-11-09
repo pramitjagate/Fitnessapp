@@ -20,7 +20,7 @@
  * extraction can't be pointed at a different model than everything else.
  * ------------------------------------------------------------------------- */
 
-export type ModelTask = "extract" | "plan" | "adapt" | "playlist";
+export type ModelTask = "extract" | "plan" | "adapt" | "playlist" | "meal";
 
 /** Used when nothing is configured at all. */
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
@@ -30,6 +30,19 @@ const ENV_KEY: Record<ModelTask, string> = {
   plan: "ANTHROPIC_MODEL_PLAN",
   adapt: "ANTHROPIC_MODEL_ADAPT",
   playlist: "ANTHROPIC_MODEL_PLAYLIST",
+  meal: "ANTHROPIC_MODEL_MEAL",
+};
+
+/**
+ * Tasks that skip the shared ANTHROPIC_MODEL and use their own default.
+ *
+ * Reading portions off a photo is a vision task where a weaker model's misses
+ * land straight in the calorie total, and the shared setting is usually chosen
+ * for cheap text work. So meal photos only move off this default when their
+ * own variable says so.
+ */
+const OWN_DEFAULT: Partial<Record<ModelTask, string>> = {
+  meal: "claude-opus-5-5",
 };
 
 /**
@@ -40,6 +53,9 @@ const ENV_KEY: Record<ModelTask, string> = {
 export function modelFor(task: ModelTask): string {
   const specific = process.env[ENV_KEY[task]]?.trim();
   if (specific) return specific;
+
+  const own = OWN_DEFAULT[task];
+  if (own) return own;
 
   const shared = process.env.ANTHROPIC_MODEL?.trim();
   if (shared) return shared;

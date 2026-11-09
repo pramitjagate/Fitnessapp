@@ -1,4 +1,4 @@
-# Second Week
+# Kaizen
 
 An adaptive strength coach that changes your plan on **patterns, not single sessions**.
 

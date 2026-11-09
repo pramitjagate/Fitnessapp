@@ -102,6 +102,18 @@ export function totalMinutes(arc: Segment[]): number {
 }
 
 /**
+ * How many tracks a segment needs to actually last as long as it says it
+ * does. 3.5 minutes is a round, genre-agnostic average for mainstream
+ * hip-hop/EDM/trap — exact per track, obviously wrong, close enough that a
+ * 28-minute block doesn't run out of music with 18 minutes of lifting left.
+ */
+const AVG_TRACK_MINUTES = 3.5;
+
+export function trackCountFor(minutes: number): number {
+  return Math.max(1, Math.ceil(minutes / AVG_TRACK_MINUTES));
+}
+
+/**
  * The prompt a generator (Spotify's own, or a model) should be given. Naming
  * the arc explicitly outperforms a genre list by a wide margin — describe the
  * session, not the music.

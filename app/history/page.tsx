@@ -66,6 +66,16 @@ export default async function History() {
                   </span>
                 </div>
               ))}
+              {s.accessories?.map((a) => (
+                <div className="lift" key={a.exercise}>
+                  <span className="lift-name">{a.exercise}</span>
+                  <span className="lift-rx">
+                    {a.done
+                      ? `${a.weightKg === null ? "bodyweight" : formatWeight(a.weightKg, db.profile.units)} · ${a.setsCompleted} × ${a.repsCompleted}`
+                      : "skipped"}
+                  </span>
+                </div>
+              ))}
             </div>
 
             {s.feedback && <p className="note">&ldquo;{s.feedback}&rdquo;</p>}

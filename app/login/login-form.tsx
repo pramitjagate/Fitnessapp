@@ -52,7 +52,7 @@ export default function LoginForm({
 
   return (
     <div className="auth">
-      <div className="auth-brand">Second Week</div>
+      <div className="auth-brand">Kaizen</div>
 
       <p className="auth-tag">
         An adaptive strength coach that changes your plan on patterns, not single sessions.

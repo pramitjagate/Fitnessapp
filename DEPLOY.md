@@ -1,4 +1,4 @@
-# Deploying Second Week
+# Deploying Kaizen
 
 Local development needs no database. This file is about putting it on the internet.
 
@@ -36,8 +36,8 @@ rather than a diff the tool worked out on its own.
 ## 2. Vercel
 
 ```bash
-git init && git add -A && git commit -m "Second Week"
-gh repo create second-week --private --source=. --push
+git init && git add -A && git commit -m "Kaizen"
+gh repo create kaizen --private --source=. --push
 ```
 
 Import the repo at vercel.com, then set environment variables:
